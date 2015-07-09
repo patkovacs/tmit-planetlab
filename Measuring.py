@@ -6,13 +6,16 @@ from time import time
 from datetime import date, datetime
 import trparse
 import json
+from multiprocessing import Pool
 
 # Constants
-slice_name      = 'budapestple_cloud'
-rsa_file        = '../ssh_needs/id_rsa'
-knownHosts_file = '../ssh_needs/known_hosts'
+slice_name          = 'budapestple_cloud'
+rsa_file            = 'ssh_needs/id_rsa'
+knownHosts_file     = 'ssh_needs/known_hosts'
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
-iperf_skeleton = "iperf -c %s -u"
+iperf_skeleton      = "iperf -c %s -u"
+used_threads        = 3
+
 
 host1 = "152.66.244.83"#Official
 host2 = "152.66.127.83"#Test
@@ -102,16 +105,30 @@ def init():
     targets = ["152.66.244.83"]
     print "number of nodes: ", len(nodes)
     print "\tfirst node: ", nodes[0]
-    connBuilder = ConnectionBuilder(slice_name, rsa_file, None)
-
-    TracerouteMeasure.connection_builder = connBuilder
 
     # Build up the needed Measures
     for target in targets:
         for node in nodes:#nodes[200:300]:
             measures.append(TracerouteMeasure(node, target))
 
+
+def connectAndMeasure(measure):
+    connected = measure.connect()
+    if connected:
+        measure.runMeasure()
+    return measure
+
+
 def measure():
+    global measures
+    workers = Pool(used_threads)
+    begin = time()
+    print "runMeasurements on %d threads..."%used_threads
+    measures = workers.map(connectAndMeasure, measures)
+    print "Elapsed time: %0.0f seconds"% (time() - begin)
+    #suceed = reduce(lambda bool: )
+
+def measure_old():
     connected = 0
     success = 0
     begin = last = time()
@@ -162,6 +179,8 @@ class TracerouteMeasure:
         """
         self.fromIP     = fromNode
         self.toIP       = toIP
+        self.toDNS      = None
+        self.fromDNS    = None
         self.connection = None
         self.error      = None
         self.errorTrace = None
@@ -298,6 +317,11 @@ class TracerouteMeasure:
         self.rawResult = outp
         return True
 
+    def connectAndMeasure(self):
+        connected = self.connect()
+        if connected:
+            self.runMeasure()
+
     def runMeasure(self):
         if self.error != None:
             return False
@@ -333,7 +357,7 @@ class TracerouteMeasure:
         res = { "date":   self.date,
                 "time":   self.timeStamp,
                 "online": self.online,
-                "from":   self.fromDNS,
+                "from":   self.fromIP,
                 "to":     self.toIP}
 
         if sendError and self.error != None:
@@ -420,6 +444,9 @@ def getDate():
     today = date.today()
     return "{:d}.{:0>2d}.{:0>2d}".format(today.year, today.month, today.day)
 
+
+connBuilder = ConnectionBuilder(slice_name, rsa_file, None)
+TracerouteMeasure.connection_builder = connBuilder
 
 if __name__ == "__main__":
     main()
