@@ -4,9 +4,14 @@ __date__ = "2015.06.15"
 from RemoteScripting import *
 from time import time
 from datetime import date, datetime
+import sys
+sys.path.append("utils")
 import trparse
+from threadedMap import conc_map
 import json
 from multiprocessing import Pool
+import zlib
+import base64
 
 # Constants
 slice_name          = 'budapestple_cloud'
@@ -89,12 +94,22 @@ def persist():
     global results
 
     for measure in measures:
-        results.append(measure.getData())
+        results.append(measure.getData(sendError=False))
 
     timeStamp = getTime().replace(":", ".")[0:-3] # escape : to . and remove seconds
     filename = 'results/rawTrace_%s_%s.txt'%(getDate(), timeStamp)
     with open(filename,'w') as f:
         f.write(json.dumps(results, indent=2))
+
+    """
+    filename = 'results/rawTrace_%s_%s.txt.gzip'%(getDate(), timeStamp)
+    with open(filename,'w') as f:
+        blob        = json.dumps(results, indent=2)
+        blob_gzip   = zlib.compress(blob, 9)
+        blob_base64 = base64.b64encode(blob_gzip)
+        f.write(blob_base64)
+    """
+
 
 def init():
     global measures, targets, nodes
@@ -121,12 +136,17 @@ def connectAndMeasure(measure):
 
 def measure():
     global measures
-    workers = Pool(used_threads)
     begin = time()
     print "runMeasurements on %d threads..."%used_threads
-    measures = workers.map(connectAndMeasure, measures)
+    measures = conc_map(connectAndMeasure, measures, used_threads)
+    #workers = Pool(used_threads)
+    #measures2 = workers.map(connectAndMeasure, measures)
     print "Elapsed time: %0.0f seconds"% (time() - begin)
-    #suceed = reduce(lambda bool: )
+    suceed = reduce(
+        lambda acc, new:
+            acc+1 if new.error == None else acc,
+        measures, 0)
+    print "Succeed measures: %d"%suceed
 
 def measure_old():
     connected = 0
@@ -158,6 +178,10 @@ def measure_old():
     print "offline: ", offline
 
 def main():
+    init()
+
+
+    exit()
     init()
     measure()
     persist()
@@ -338,7 +362,7 @@ class TracerouteMeasure:
             return False
 
         self.timeStamp_c = time()
-
+        """
         try:
             print "parse traceroute"
             self.traceroute = trparse.loads(self.rawResult, self.fromIP)
@@ -346,8 +370,8 @@ class TracerouteMeasure:
             self.errorTrace = traceback.format_exc()
             self.error = "ParserError"
             return False
-
         self.timeStamp_d = time()
+        """
         return True
 
     def getData(self, sendError=True, sendErrorTrace=False):
