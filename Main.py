@@ -20,7 +20,8 @@ slice_name          = 'budapestple_cloud'
 rsa_file            = 'ssh_needs/id_rsa'
 knownHosts_file     = 'ssh_needs/known_hosts'
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
-iperf_skeleton      = "iperf -c %s -u"
+iperf_skeleton      = "iperf -c %s -u -t 5 -i 1 -p 5200"
+iperf_server        = "iperf -s -u -p 5200"
 used_threads        = 3
 
 
