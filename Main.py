@@ -3,13 +3,14 @@ __author__ = 'erudhor'
 
 from RemoteScripting import *
 from Measuring import *
-from time import time
+from time import time, sleep
 from datetime import date, datetime
 import sys
 sys.path.append("utils")
 import trparse
 from threadedMap import conc_map
 import json
+import threading
 from multiprocessing import Pool
 import zlib
 import base64
@@ -20,13 +21,17 @@ slice_name          = 'budapestple_cloud'
 rsa_file            = 'ssh_needs/id_rsa'
 knownHosts_file     = 'ssh_needs/known_hosts'
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
-iperf_skeleton      = "iperf -c %s -u"
+# ip address - time - interval - bandwidth Mbitps - port
+iperf_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
 used_threads        = 3
 
+RUN_MEASURES = ["iperf"]#, "traceroute"]
 
-host1 = "152.66.244.83"#Official
-host2 = "152.66.127.83"#Test
-targets = [host1, host2]
+
+target1 = "152.66.244.82"
+target2 = "152.66.127.81"
+target_names = [target1, target2]
+target_username = "mptcp"
 
 nodes = []
 measures = []
@@ -47,41 +52,103 @@ def main():
 
 
 def test():
-    global targets
-    target = "128.208.4.198"#"planetlab1.tmit.bme.hu"
-    targets = [target]
+    global target_names
+    node_names = ["194.29.178.14"]
     port = 5200
-    # Start iperf server on target
-    server_script = 'nohup iperf -s -u -p %d >> iperf_server.out'%port
-    targetConnection = None
-
+    # Start iperf server on sources
+    server_script = 'iperf -s -B %s -u -p %d'
+    targets = []
+    target = None
+    print "Test started"
     try:
-        targetConnection = connBuilder.getConnection(target)
+        for target_name in target_names:
+            target = {
+                "name": target_name,
+                "connection": connBuilder.getConnection(target_name, target_username)
+            }
+            print "Connected to target: ", target_name
+            targets.append(target)
     except:
         print "Error at connecting to target: ", target
         print traceback.format_exc()
         exit()
 
-    output, errors = targetConnection.runCommand(server_script)
+    for target in targets:
+        def startServer(target):
+            print "Starting iperf server on: ", target["name"]
+            cmd = server_script % target["name"], port
+            stdout, stderr = target["connection"].runCommand(cmd)
+            target["stdout"] = stdout
+            target["stderr"] = stderr
+            print "Iperf server on %s ended." % target["name"]
 
-    if len(errors) > 0:
-        print "Error at starting remote iperf server:"
-        for line in errors.readLines():
-            print line
-        exit()
+            print "Checking for error..."
+            if len(stderr) > 0:
+                print "Errors found:"
+                print stderr
 
-    print "Output:"
-    for line in output.readLines():
-        print line
+            print "Normal output:"
+            print stdout
+
+        t = threading.Thread(target=startServer, args=(target, ))
+        t.start()
+        target["thread"] = t
+
+    print "Starting clients:"
+    node_names = bestNodes()[0:1]
+    nodes = []
+    try:
+        for node_name in node_names:
+            node = {
+                "name": node_name,
+                "connection": connBuilder.getConnection(node_name)
+            }
+            print "Connected to node: ", node_name
+            nodes.append(node)
+    except:
+        print "Error at connecting to node: ", target
+
+    print "Connections built to nodes."
+
+
+    for node in nodes:
+        print "Starting iperf client on: ", node["name"]
+        stdout, stderr = node["connection"].runCommand(iperf_skeleton)
+        node["stdout"] = stdout
+        node["stderr"] = stderr
+        print "Iperf server on %s ended." % node["name"]
+
+        print "Checking for error..."
+        if len(stderr) > 0:
+            print "Errors found:"
+            print stderr
+
+        print "Normal output:"
+        print stdout
+
+
+
+
+
+    print "Close servers"
+    for target in targets:
+        target["connection"].disconnect()
+    print "Test ended"
 
 
     # Start iperf client on node and get results
+
 
 def persist():
     global results
 
     for measure in measures:
-        results.append(measure.getData(sendError=False))
+        data = measure.getData(sendError=False)
+        if data is not None:
+            results.append()
+
+    if len(results) == 0:
+        return
 
     timeStamp = getTime().replace(":", ".")[0:-3] # escape : to . and remove seconds
     filename = 'results/rawTrace_%s_%s.txt'%(getDate(), timeStamp)
@@ -97,20 +164,20 @@ def persist():
         f.write(blob_base64)
     """
 
+
 def init():
-    global measures, targets, nodes
+    global measures, target_names, nodes
 
     #nodes = getPlanetLabNodes(slice_name)
-    #nodes = ["pli1-pa-1.hpl.hp.com"]
     nodes = bestNodes()[0:5]
-    targets = ["152.66.244.83"]
     print "number of nodes: ", len(nodes)
     print "\tfirst node: ", nodes[0]
 
     # Build up the needed Measures
-    for target in targets:
+    for target in target_names:
         for node in nodes:#nodes[200:300]:
             measures.append(TracerouteMeasure(node, target))
+
 
 def measure():
     global measures

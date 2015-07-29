@@ -10,8 +10,8 @@ import traceback
 import socket
 
 # Constants
-api_url         = 'https://www.planet-lab.eu:443/PLCAPI/'
-plc_credentials = '../ssh_needs/credentials.private'
+API_URL         = 'https://www.planet-lab.eu:443/PLCAPI/'
+PLC_CREDENTIALS = '../ssh_needs/credentials.private'
 
 
 # Classes
@@ -49,24 +49,28 @@ class ConnectionBuilder:
         self.private_key = private_key
         self.knownHosts = knownHosts
 
-    def getConnection(self, target):
+    def getConnection(self, target, username=None):
         ssh = paramiko.SSHClient()
+
         if self.knownHosts != None:
             ssh.load_host_keys(self.knownHosts)
             ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
         else:
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        ssh.connect(target, username=self.slice_name, key_filename=self.private_key)
+        if username is None:
+            username = self.slice_name
+
+        ssh.connect(target, username=username, key_filename=self.private_key)
         return Connection(ssh)
 
 
 # Functions
 def getPlanetLabNodes(slice_name):
-    global plc_credentials, api_url
+    global PLC_CREDENTIALS, API_URL
 
-    plc_api = xmlrpclib.ServerProxy(api_url, allow_none=True)
-    cred    = open(plc_credentials,'r')
+    plc_api = xmlrpclib.ServerProxy(API_URL, allow_none=True)
+    cred    = open(PLC_CREDENTIALS,'r')
 
     auth = { 'AuthMethod' : 'password',
              'Username' : cred.readline().split('\n')[0],

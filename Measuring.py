@@ -5,12 +5,12 @@ from RemoteScripting import *
 from time import time
 from datetime import date, datetime
 import sys
-sys.path.append("utils")
-import trparse
-import json
+import paramiko
+import simplejson as json
 import zlib
 import base64
-import paramiko
+sys.path.append("utils")
+import trparse
 
 
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
