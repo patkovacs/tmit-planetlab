@@ -23,7 +23,8 @@ knownHosts_file     = 'ssh_needs/known_hosts'
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 # ip address - time - interval - bandwidth Mbitps - port
 iperf_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
-used_threads        = 10
+
+used_threads        = 50
 
 RUN_MEASURES = ["iperf"]#, "traceroute"]
 
@@ -45,7 +46,8 @@ def main():
     #init()
     #test()
 
-    #exit()
+    scan_planet_lab()
+    exit()
     init()
     measure()
     persist()
@@ -180,6 +182,60 @@ def init():
     for target in target_names:
         for node in nodes:#nodes[200:300]:
             measures.append(TracerouteMeasure(node, target))
+
+def scan_planet_lab():
+    print "get planet lab ip list"
+    node_ips = getPlanetLabNodes(slice_name)
+    nodes = [{"ip":ip} for ip in node_ips]
+
+    def do_it(node):
+        cmd = "cat /etc/issue"
+        online = ping(node["ip"])
+        node["online"] = online
+        if not online:
+            return node
+
+        try:
+            con = connBuilder.getConnection(node["ip"])
+            node["connection"] = con
+        except Exception:
+            node["connection"] = None
+            error_lines = traceback.format_exc().splitlines()
+            node["error"] = error_lines[-1]
+            return node
+        try:
+            outp, err = con.runCommand(cmd)
+        except Exception:
+            error_lines = traceback.format_exc().splitlines()
+            node["error"] = error_lines[-1]
+            return node
+
+        if len(err) > 0:
+            node["error"] = err
+            return node
+
+        node["outp"] = outp
+
+        return node
+
+    print "start scanning them "
+    nodes = conc_map(do_it, nodes, used_threads)
+
+    print "write out the results"
+    with open("results/scan.json", "w") as f:
+        f.write(json.dumps(nodes))
+
+    print "create statistics"
+    online = reduce(lambda acc, new:
+                        acc+1 if new["online"] else acc,
+                    nodes, 0)
+    print "Online nodes: ", online
+
+    error = reduce(lambda acc, new:
+                    acc+1 if new.has_key("error") else acc,
+                nodes, 0)
+    print "Occured errors: ", error
+
 
 
 def measure():
