@@ -23,7 +23,7 @@ knownHosts_file     = 'ssh_needs/known_hosts'
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 # ip address - time - interval - bandwidth Mbitps - port
 iperf_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
-used_threads        = 3
+used_threads        = 10
 
 RUN_MEASURES = ["iperf"]#, "traceroute"]
 
@@ -42,10 +42,10 @@ TracerouteMeasure.connection_builder = connBuilder
 
 
 def main():
-    init()
-    test()
+    #init()
+    #test()
 
-    exit()
+    #exit()
     init()
     measure()
     persist()
@@ -145,7 +145,7 @@ def persist():
     for measure in measures:
         data = measure.getData(sendError=False)
         if data is not None:
-            results.append()
+            results.append(data)
 
     if len(results) == 0:
         return
@@ -164,12 +164,15 @@ def persist():
         f.write(blob_base64)
     """
 
+def installIperf(con):
+    pass
+
 
 def init():
     global measures, target_names, nodes
 
     #nodes = getPlanetLabNodes(slice_name)
-    nodes = bestNodes()[0:5]
+    nodes = bestNodes()
     print "number of nodes: ", len(nodes)
     print "\tfirst node: ", nodes[0]
 

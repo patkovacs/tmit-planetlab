@@ -22,11 +22,11 @@ class Connection:
     def __init__(self, ssh):
         self.ssh = ssh
 
-    def runCommand(self, command):
+    def runCommand(self, command, timeout=10):
         if self.ssh == None:
             raise RuntimeWarning("Connection not alive!")
 
-        stdin, stdout, stderr = self.ssh.exec_command(command)
+        stdin, stdout, stderr = self.ssh.exec_command(command, timeout=timeout)
         output = stdout.read()
         errors = stderr.read()
         return output, errors
@@ -49,7 +49,7 @@ class ConnectionBuilder:
         self.private_key = private_key
         self.knownHosts = knownHosts
 
-    def getConnection(self, target, username=None):
+    def getConnection(self, target, username=None, timeout=5):
         ssh = paramiko.SSHClient()
 
         if self.knownHosts != None:
@@ -61,7 +61,7 @@ class ConnectionBuilder:
         if username is None:
             username = self.slice_name
 
-        ssh.connect(target, username=username, key_filename=self.private_key)
+        ssh.connect(target, username=username, key_filename=self.private_key, timeout=timeout)
         return Connection(ssh)
 
 

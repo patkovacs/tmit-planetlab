@@ -15,7 +15,7 @@ import trparse
 
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 
-class TracerouteMeasure:
+class Measure:
     """ This class helps to do a...
     """
 
@@ -38,7 +38,6 @@ class TracerouteMeasure:
         self.errorTrace = None
         self.rawResult  = None
         self.rawResults = []
-        self.traceroute = None
         self.online     = None
         self.date       = getDate()
         self.timeStamp  = getTime()
@@ -133,42 +132,6 @@ class TracerouteMeasure:
         self.rawResults[name] = outp
         return True
 
-    def runTraceroute(self, sudo=False):
-        if self.error != None:
-            return False
-        #self.runScript("traceroute", traceroute_skeleton)
-
-        try:
-            command = traceroute_skeleton%self.toIP
-            if sudo:
-                command = "sudo "+command
-
-            self.timeStamp = getTime()
-            outp, err = self.connection.runCommand(command)
-        except IOError:
-            self.errorTrace = traceback.format_exc()
-            self.error = "IOError"
-            return False
-        except Exception:
-            self.errorTrace = traceback.format_exc()
-            self.error = "RemoteExecutionError"
-            return False
-
-        errLines = err.splitlines()
-        if len(errLines) > 0:
-            for line in errLines:
-                if "bind" in line:
-                    if sudo:
-                        break
-                    else:
-                        return self.runTraceroute(sudo=True)
-            self.errorTrace = err
-            self.error = "RuntimeError"
-            return False
-
-        self.rawResult = outp
-        return True
-
     def connectAndMeasure(self):
         connected = self.connect()
         if connected:
@@ -219,9 +182,62 @@ class TracerouteMeasure:
         if self.error != None:
             return res#json.dumps(res)
 
-        res["trace"] = self.rawResult
-
         return res#json.dumps(res)
+
+
+class IperfMeasure(Measure):
+    """
+    http://mirrors.fedoraproject.org/mirrorlist?repo=fedora-14&arch=i386
+    """
+
+class TracerouteMeasure(Measure):
+
+    def __init__(self, from_ip, to_ip):
+        Measure.__init__(self, from_ip, to_ip)
+        self.traceroute = None
+
+
+    def getData(self, sendError=True, sendErrorTrace=False):
+        res = Measure.getData(self, sendError, sendErrorTrace)
+        if self.error is None:
+            res["trace"] = self.rawResult
+        return res
+
+    def runTraceroute(self, sudo=False):
+        if self.error != None:
+            return False
+        #self.runScript("traceroute", traceroute_skeleton)
+
+        try:
+            command = traceroute_skeleton%self.toIP
+            if sudo:
+                command = "sudo "+command
+
+            self.timeStamp = getTime()
+            outp, err = self.connection.runCommand(command)
+        except IOError:
+            self.errorTrace = traceback.format_exc()
+            self.error = "IOError"
+            return False
+        except Exception:
+            self.errorTrace = traceback.format_exc()
+            self.error = "RemoteExecutionError"
+            return False
+
+        errLines = err.splitlines()
+        if len(errLines) > 0:
+            for line in errLines:
+                if "bind" in line:
+                    if sudo:
+                        break
+                    else:
+                        return self.runTraceroute(sudo=True)
+            self.errorTrace = err
+            self.error = "RuntimeError"
+            return False
+
+        self.rawResult = outp
+        return True
 
     def getLinks(self):
         if self.error != None:
