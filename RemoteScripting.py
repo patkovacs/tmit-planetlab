@@ -51,6 +51,7 @@ class ConnectionBuilder:
 
     def getConnection(self, target, username=None, timeout=5):
         ssh = paramiko.SSHClient()
+        paramiko.util.log_to_file("paramiko.log")
 
         if self.knownHosts != None:
             ssh.load_host_keys(self.knownHosts)

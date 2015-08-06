@@ -1,6 +1,12 @@
 from Queue import Queue
 from threading import Thread
 
+class ParalellJobs:
+
+    def __init__(self):
+        pass
+
+
 def conc_map(func, data, num_threads):
     def do_stuff(q, r):
       while not q.empty():

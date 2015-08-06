@@ -1,12 +1,12 @@
 __author__ = 'erudhor'
 
 
+import sys
+sys.path.append("utils")
 from RemoteScripting import *
 from Measuring import *
 from time import time, sleep
 from datetime import date, datetime
-import sys
-sys.path.append("utils")
 import trparse
 from threadedMap import conc_map
 import json
@@ -15,6 +15,7 @@ from multiprocessing import Pool
 import zlib
 import base64
 import paramiko
+from collections import Counter
 
 # Constants
 slice_name          = 'budapestple_cloud'
@@ -24,7 +25,7 @@ traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 # ip address - time - interval - bandwidth Mbitps - port
 iperf_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
 
-used_threads        = 50
+used_threads        = 20
 
 RUN_MEASURES = ["iperf"]#, "traceroute"]
 
@@ -43,10 +44,9 @@ TracerouteMeasure.connection_builder = connBuilder
 
 
 def main():
-    #init()
-    #test()
+    init()
+    test()
 
-    scan_planet_lab()
     exit()
     init()
     measure()
@@ -141,6 +141,20 @@ def test():
     # Start iperf client on node and get results
 
 
+def init():
+    global measures, target_names, nodes
+
+    #nodes = getPlanetLabNodes(slice_name)
+    nodes = bestNodes()
+    print "number of nodes: ", len(nodes)
+    print "\tfirst node: ", nodes[0]
+
+    # Build up the needed Measures
+    for target in target_names:
+        for node in nodes:#nodes[200:300]:
+            measures.append(TracerouteMeasure(node, target))
+
+
 def persist():
     global results
 
@@ -166,77 +180,6 @@ def persist():
         f.write(blob_base64)
     """
 
-def installIperf(con):
-    pass
-
-
-def init():
-    global measures, target_names, nodes
-
-    #nodes = getPlanetLabNodes(slice_name)
-    nodes = bestNodes()
-    print "number of nodes: ", len(nodes)
-    print "\tfirst node: ", nodes[0]
-
-    # Build up the needed Measures
-    for target in target_names:
-        for node in nodes:#nodes[200:300]:
-            measures.append(TracerouteMeasure(node, target))
-
-def scan_planet_lab():
-    print "get planet lab ip list"
-    node_ips = getPlanetLabNodes(slice_name)
-    nodes = [{"ip":ip} for ip in node_ips]
-
-    def do_it(node):
-        cmd = "cat /etc/issue"
-        online = ping(node["ip"])
-        node["online"] = online
-        if not online:
-            return node
-
-        try:
-            con = connBuilder.getConnection(node["ip"])
-            node["connection"] = con
-        except Exception:
-            node["connection"] = None
-            error_lines = traceback.format_exc().splitlines()
-            node["error"] = error_lines[-1]
-            return node
-        try:
-            outp, err = con.runCommand(cmd)
-        except Exception:
-            error_lines = traceback.format_exc().splitlines()
-            node["error"] = error_lines[-1]
-            return node
-
-        if len(err) > 0:
-            node["error"] = err
-            return node
-
-        node["outp"] = outp
-
-        return node
-
-    print "start scanning them "
-    nodes = conc_map(do_it, nodes, used_threads)
-
-    print "write out the results"
-    with open("results/scan.json", "w") as f:
-        f.write(json.dumps(nodes))
-
-    print "create statistics"
-    online = reduce(lambda acc, new:
-                        acc+1 if new["online"] else acc,
-                    nodes, 0)
-    print "Online nodes: ", online
-
-    error = reduce(lambda acc, new:
-                    acc+1 if new.has_key("error") else acc,
-                nodes, 0)
-    print "Occured errors: ", error
-
-
 
 def measure():
     global measures
@@ -258,6 +201,7 @@ def measure():
             acc+1 if new.error == None else acc,
         measures, 0)
     print "Succeed measures: %d"%suceed
+
 
 def bestNodes():
     return ["128.208.4.198",
@@ -291,6 +235,88 @@ def bestNodes():
             "128.112.139.97",
             "128.232.103.202",
             ]
+
+
+def scan_planet_lab():
+    print "get planet lab ip list"
+    node_ips = getPlanetLabNodes(slice_name)
+
+    def do_it(node_ip):
+        cmd = "cat /etc/issue"
+        node = {"ip": node_ip}
+        online = ping(node["ip"])
+        node["online"] = online
+        if not online:
+            return node
+
+        try:
+            con = connBuilder.getConnection(node["ip"])
+        except Exception:
+            error_lines = traceback.format_exc().splitlines()
+            node["error"] = error_lines[-1]
+            return node
+        try:
+            outp, err = con.runCommand(cmd)
+        except Exception:
+            error_lines = traceback.format_exc().splitlines()
+            node["error"] = error_lines[-1]
+            return node
+
+        if len(err) > 0:
+            node["error"] = err
+            return node
+
+        node["outp"] = outp
+
+        return node
+
+    print "start scanning them "
+    nodes = conc_map(do_it, node_ips, used_threads)
+
+    print "write out the results"
+    with open("results/scan.json", "w") as f:
+        f.write(json.dumps(nodes))
+
+    print "create statistics"
+    online = reduce(lambda acc, new:
+                        acc+1 if new["online"] else acc,
+                    nodes, 0)
+    print "Online nodes: ", online
+
+    error = reduce(lambda acc, new:
+                    acc+1 if new.has_key("error") else acc,
+                nodes, 0)
+    print "Occured errors: ", error
+
+
+def get_scan_statistic():
+    with open("results/scan.json", "r") as f:
+        nodes = json.loads(f.read())
+        errors = Counter()
+        outp = Counter()
+        offline = 0
+        for node in nodes:
+            if not node["online"]:
+                offline += 1
+                continue
+            if node.has_key("error"):
+                errors[node["error"]] += 1
+            else:
+                outp[node["outp"]] += 1
+
+        print "Offline count: ", offline, "\n"
+
+        for type, count in errors.most_common(len(errors)):
+            print "Error count:%d\n\t%s" % (count, type)
+
+        for type, count in outp.most_common(len(outp)):
+            print "Output count:%d\n\t%s" % (count, type)
+
+        #print "==============================="
+        #print errors
+        #print "==============================="
+        #print outp
+
 
 if __name__ == "__main__":
     main()
