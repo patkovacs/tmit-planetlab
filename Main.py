@@ -8,7 +8,7 @@ from Measuring import *
 from time import time, sleep
 from datetime import date, datetime
 import trparse
-from threadedMap import conc_map
+from threadedMap import thread_map, proc_map
 import json
 import threading
 from multiprocessing import Pool
@@ -44,7 +44,6 @@ TracerouteMeasure.connection_builder = connBuilder
 
 
 def main():
-    init()
     test()
 
     exit()
@@ -52,8 +51,91 @@ def main():
     measure()
     persist()
 
+def install_iperf(con, ip):
+    print "Install node: ", ip
+    cmd_install = "sudo yum install -y iperf"
+    con.runCommand(cmd_install)
+
+def check_iperf(node):
+    cmd_install = "sudo yum install -y iperf"
+    cmd_test = "iperf -v"
+    not_installed_test = "iperf: command not found"
+    installed_test = "iperf version"
+
+    print "Check node: ", node
+
+    if not ping(node):
+        return "offline"
+
+    try:
+        con = connBuilder.getConnection(node)
+    except Exception:
+        return "connection fail"
+
+    try:
+        err, outp = con.runCommand(cmd_test)
+    except Exception:
+        return "runtime error"
+
+    if len(err) > 0:
+        return "runtime error"
+
+    if installed_test in outp:
+        version = outp.split(" ")[2]
+        return "installed - version: %s" % version
+
+    try:
+        install_iperf(con, node)
+    except Exception:
+        return "install failed: "+ traceback.format_exc().splitlines()[-1]
+
+    try:
+        err, outp = con.runCommand(cmd_test)
+    except Exception:
+        return "install failed: "+ traceback.format_exc().splitlines()[-1]
+
+    if len(err) > 0:
+        return "install failed: "+ err.splitlines()[-2:-1]
+
+    if installed_test in outp:
+        version = outp.split(" ")[2]
+        return "freshly installed - version: %s" % version
+
+    return "install failed: "+outp
+
+def inception(nodes):
+    return thread_map(check_iperf, nodes, used_threads)
 
 def test():
+    global used_threads
+
+    print "get node list"
+    nodes = getPlanetLabNodes(slice_name)
+    used_procs = 10
+    used_threads = 10
+
+    print "start scanning on %d threads" % (used_threads*used_procs)
+    # results = thread_map(install_iperf, nodes, used_threads)
+    # results = proc_map(install_iperf, nodes, used_threads)
+
+    node_lists   = splitList(nodes, int(len(nodes)/used_procs))
+    result_lists = proc_map(inception, node_lists, used_procs)
+    results      = glueList(result_lists)
+
+    print "--------------------"
+    c = Counter(results)
+    print "Results:"
+
+    stats = {"date": getDate(), "time": getTime()}
+    for item in c.most_common():
+        stats[item[0]] = item[1]
+
+    print json.dumps(stats, indent=2)
+
+    with open("results/installations.json", "w") as f:
+        f.write(json.dumps(stats, indent=2))
+
+def measure_iperf():
     global target_names
     node_names = ["194.29.178.14"]
     port = 5200
@@ -192,7 +274,7 @@ def measure():
 
     begin = time()
     print "runMeasurements on %d threads..."%used_threads
-    measures = conc_map(connectAndMeasure, measures, used_threads)
+    measures = thread_map(connectAndMeasure, measures, used_threads)
     #workers = Pool(used_threads)
     #measures2 = workers.map(connectAndMeasure, measures)
     print "Elapsed time: %0.0f seconds"% (time() - begin)
@@ -271,7 +353,7 @@ def scan_planet_lab():
         return node
 
     print "start scanning them "
-    nodes = conc_map(do_it, node_ips, used_threads)
+    nodes = thread_map(do_it, node_ips, used_threads)
 
     print "write out the results"
     with open("results/scan.json", "w") as f:
@@ -317,6 +399,29 @@ def get_scan_statistic():
         #print "==============================="
         #print outp
 
+
+def splitList(list, splitLen):
+    splitted_list = []
+    i = 0
+    j = 0
+    split = []
+    for node in list:
+        split.append(node)
+        if (j) % (splitLen) == splitLen-1:
+            splitted_list.append(split)
+            split = []
+            i += 1
+        j += 1
+
+    splitted_list.append(split)
+
+    return splitted_list
+
+def glueList(list_of_lists):
+    results = []
+    for list in list_of_lists:
+        results.extend(list)
+    return results
 
 if __name__ == "__main__":
     main()

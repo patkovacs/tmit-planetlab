@@ -186,9 +186,56 @@ class Measure:
 
 
 class IperfMeasure(Measure):
-    """
-    http://mirrors.fedoraproject.org/mirrorlist?repo=fedora-14&arch=i386
-    """
+
+
+    def __init__(self, from_ip, to_ip, duration):
+        Measure.__init__(self, from_ip, to_ip)
+        self.duration = duration
+        self.iperf = None
+
+    def _startServer(self):
+        pass
+
+    def _startClient(self):
+        pass
+
+    def runIperf(self):
+        if self.error != None:
+            return False
+        #self.runScript("traceroute", traceroute_skeleton)
+
+        try:
+            command = traceroute_skeleton%self.toIP
+            if sudo:
+                command = "sudo "+command
+
+            self.timeStamp = getTime()
+            outp, err = self.connection.runCommand(command)
+        except IOError:
+            self.errorTrace = traceback.format_exc()
+            self.error = "IOError"
+            return False
+        except Exception:
+            self.errorTrace = traceback.format_exc()
+            self.error = "RemoteExecutionError"
+            return False
+
+        errLines = err.splitlines()
+        if len(errLines) > 0:
+            for line in errLines:
+                if "bind" in line:
+                    if sudo:
+                        break
+                    else:
+                        return self.runTraceroute(sudo=True)
+            self.errorTrace = err
+            self.error = "RuntimeError"
+            return False
+
+        self.rawResult = outp
+        return True
+
+
 
 class TracerouteMeasure(Measure):
 
