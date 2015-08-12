@@ -134,39 +134,6 @@ class Measure:
         self.rawResults[name] = outp
         return True
 
-    def connectAndMeasure(self):
-        connected = self.connect()
-        if connected:
-            self.runMeasure()
-
-    def runMeasure(self):
-        if self.error != None:
-            return False
-
-        self.timeStamp_a = time()
-        if not self.checkConnection():
-            return False
-
-        self.timeStamp_b = time()
-
-        print "run traceroute"
-        succesfulMeasure = self.runTraceroute()
-        if not succesfulMeasure:
-            return False
-
-        self.timeStamp_c = time()
-        """
-        try:
-            print "parse traceroute"
-            self.traceroute = trparse.loads(self.rawResult, self.fromIP)
-        except:
-            self.errorTrace = traceback.format_exc()
-            self.error = "ParserError"
-            return False
-        self.timeStamp_d = time()
-        """
-        return True
-
     def getData(self, sendError=True, sendErrorTrace=False):
         if not sendError and self.error != None:
             return None # we do not send errorous measurements
@@ -187,57 +154,31 @@ class Measure:
         return res#json.dumps(res)
 
 
-class IperfServer:
-
-    def __init__(self, ip, port):
-        self.ip = ip
-        self.port = port
-        self.connected = False
-
-    def connect(self):
-        info, self.connection = ConnectionBuilder.\
-            getConnectionSafe(self.ip)
-
-        self.online = info["online"]
-        self.error = info["error"]
-        self.errorTrace = info["errorTrace"]
-        self.ip = info["ip"]
-        self.dns = info["dns"]
-
-    def start(self):
-        print "Starting iperf server on: ", self.toIP
-        start_command = self.start_server_skeleton %\
-                        (self.toIP, self.server_port)
-        stdout, stderr = self.connection.runCommand(start_command, timeout=None)
-        self.server = stdout
-        target["stderr"] = stderr
-        print "Iperf server on %s ended." % target["name"]
-
-        print "Checking for error..."
-        if len(stderr) > 0:
-            print "Errors found:"
-            print stderr
-
-        print "Normal output:"
-        print stdout
-
-
 class IperfMeasure(Measure):
 
     # Interface, Port
     start_server_skeleton = 'iperf -s -B %s -u -p %d'
+    # ip address - port - time - interval - bandwidth Mbitps
+    start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m"
 
-
-    class Client:
-        pass
-
-    def __init__(self, from_ip, to_ip, duration, server_port=5200):
+    def __init__(self, from_ip, to_ip, server_port=5200):
         Measure.__init__(self, from_ip, to_ip)
-        self.duration = duration
         self.iperf = None
         self.server_port = server_port
+        self.fromIP     = from_ip
+        self.toIP       = to_ip
+        self.toDNS      = None
+        self.fromDNS    = None
+        self.connection = None
+        self.error      = None
+        self.errorTrace = None
+        self.rawResult  = None
+        self.rawResults = []
+        self.online     = None
+        self.date       = getDate()
+        self.timeStamp  = getTime()
 
-    def _check_iperf_installation(self):
+    def _check_iperf_installation(self, con):
         cmd_test = "iperf -v"
         not_installed_test = "iperf: command not found"
         installed_test = "iperf version"
@@ -246,7 +187,7 @@ class IperfMeasure(Measure):
             return False
 
         try:
-            outp, err = self.connection.runCommand(cmd_test)
+            outp, err = con.runCommand(cmd_test)
         except Exception:
             self.iperf_install = "Error checking install: "+traceback.format_exc()
             return False
@@ -266,22 +207,51 @@ class IperfMeasure(Measure):
             self.iperf_install = "Error checking install: " + outp
             return False
 
+    def _startClient(self, duration, interval=1, bandwidth=100):
+        self.client = Connection(self.fromIP)
+        self.client.connect()
+        if self.client.error is not None:
+            return False
 
+        self._check_iperf_installation(self.client)
 
-    def _startClient(self):
-        pass
+        if "installed" != self.iperf_install:
+            return False
 
-    def runIperf(self, sudo=False):
-        iperf_skeleton = ""
-        self.runScript("iperf", iperf_skeleton)
+        cmd = self.start_client_skeleton %\
+              (self.toIP, self.server_port)
+        self.server.runCommand(cmd, timeout=duration+1)
 
+    def _startServer(self):
+        self.server = Connection(self.toIP)
+        self.server.connect()
+        if self.server.error is not None:
+            return False
+
+        self._check_iperf_installation(self.server)
+
+        if "installed" != self.iperf_install:
+            return False
+
+        cmd = self.start_server_skeleton %\
+              (self.toIP, self.server_port)
+        self.server.startCommand(cmd)
+
+    def _endServer(self):
+        self.server.endCommand()
+
+    def runIperf(self, duration, bandwidth=100, sudo=False):
+        self.duration = duration
+        self.bandwidth = bandwidth
         self._startServer()
-        self._startClient()
-
-
-
+        self._startClient(duration, bandwidth=bandwidth)
+        self._endServer()
         return True
 
+class ParalellMeasure:
+
+    def addMeasure(self):
+        pass
 
 class TracerouteMeasure(Measure):
 

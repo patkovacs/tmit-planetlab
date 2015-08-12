@@ -8,6 +8,8 @@ import platform
 import subprocess
 import traceback
 import socket
+from threading import Thread
+import time
 
 
 # Constants
@@ -26,17 +28,29 @@ class Connection:
     connectionbuilder = None
 
 
-    def __init__(self, target, username=None, conBuilder=None):
+    def __init__(self, ip, username=None, conBuilder=None):
         if conBuilder is None:
             self.conBuilder = Connection.connectionbuilder
         else:
             self.conBuilder = conBuilder
-        self.target = target
+        self.ip = ip
         self.username= username
         self.ssh = None
+        self.online = None
+        self.error = None
+        self.errorTrace = None
 
     def connect(self, timeout=5):
-        self.ssh = self.conBuilder.getConnection(self.target, self.username, timeout)
+        info, self.connection = self.conBuilder.\
+            getConnectionSafe(self.ip)
+
+        self.online = info["online"]
+        self.error = info["error"]
+        self.errorTrace = info["errorTrace"]
+        self.ip = info["ip"]
+        self.dns = info["dns"]
+        self.stderr = None
+        self.stdout = None
 
     def testOS(self):
         # TODO: Test it!
@@ -64,6 +78,33 @@ class Connection:
 
         return result
 
+    def endCommand(self):
+
+        self.disconnect()
+
+        if self.stderr is not None and len(self.stderr) > 0:
+            self.error = "RuntimeError"
+            self.errorTrace = self.stderr
+
+    def startCommand(self, script):
+        def run(self):
+            self.running = True
+            self.startTime = time.time()
+            try:
+                self.stdout, self.stderr = self.connection.\
+                    runCommand(script, timeout=None)
+            except Exception:
+                self.errorTrace = traceback.format_exc()
+                self.error = "ErrorExecutingRemoteComamnd:"+\
+                    self.errorTrace.splitlines()[-1]
+            self.endTime = time.time()
+            self.running = False
+            self.ended = True
+
+        self.thread = Thread(target=run, args=(self, ))
+
+        self.thread.start()
+
     def runCommand(self, command, timeout=10):
         if self.ssh == None:
             raise RuntimeWarning("Connection not alive!")
@@ -74,7 +115,8 @@ class Connection:
         return output, errors
 
     def disconnect(self):
-        self.ssh.close()
+        if self.ssh is not None:
+            self.ssh.close()
         self.ssh = None
 
 
@@ -110,14 +152,19 @@ class ConnectionBuilder:
 
     def getConnectionSafe(self, target, username=None, timeout=5):
         info = {}
-        info["online"] = ping(target)
+        info["ip"] = target
+        info["dns"] = target
+
+        if not validIP(target):
+            info["ip"] = getIP_fromDNS(target)
+            if info["ip"] == None:
+                info["online"] = False
+                info["error"] = "AddressError"
+                info["errorTrace"] = "not valid ip address or DNS name"
+                return info, None
+
+        info["online"] = ping(info["ip"])
         if info["online"]:
-            if not validIP(target):
-                info["dns"] = target
-                info["ip"] = getIP_fromDNS(target)
-                if info["ip"] == None:
-                    info["error"] = "not valid ip address or DNS name"
-                    return info, None
             try:
                 con = self.getConnection(info["ip"], username, timeout)
                 return info, con

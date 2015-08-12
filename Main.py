@@ -21,9 +21,14 @@ from collections import Counter
 slice_name          = 'budapestple_cloud'
 rsa_file            = 'ssh_needs/id_rsa'
 knownHosts_file     = 'ssh_needs/known_hosts'
+# target ip
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
+
 # ip address - time - interval - bandwidth Mbitps - port
-iperf_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
+iperf_client_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
+
+# ip(interface), port
+iperf_server_skeleton = 'iperf -s -B %s -u -p %d'
 
 used_procs   = 10
 used_threads = 10
@@ -46,15 +51,12 @@ Connection.connectionbuilder =\
 
 
 def main():
-    measure_iperf()
+    measure_iperf_2()
 
     exit()
     init()
     measure()
     persist()
-
-def start_client(target):
-    pass
 
 def start_server(target):
     print "Starting iperf server on: ", target["name"]
@@ -71,12 +73,27 @@ def start_server(target):
     print "Normal output:"
     print stdout
 
+def measure_iperf_2():
+    port = 5200
+    duration = 10
+    node_names = bestNodes()[:5]
+    nodes = []
+
+    for node_name in node_names:
+        measure = IperfMeasure(node_name, target_names[0], port)
+        nodes.append(measure)
+        measure = IperfMeasure(node_name, target_names[1], port)
+        nodes.append(measure)
+
+    for node in nodes:
+        node.runIperf(duration)
+
+    print "Happy End"
+
 def measure_iperf():
     global target_names
     node_names = ["194.29.178.14"]
     port = 5200
-    # Start iperf server on sources
-    server_script = 'iperf -s -B %s -u -p %d'
     targets = []
     target = None
     print "Test started"
@@ -84,7 +101,8 @@ def measure_iperf():
     for target_name in target_names:
         target = {
             "name": target_name,
-            "connection": Connection(target_name, target_username)
+            "connection": Connection
+            (target_name, target_username)
         }
         target["connection"].connect()
         print "Connected to target: ", target_name
@@ -95,7 +113,7 @@ def measure_iperf():
     #    exit()
 
     for target in targets:
-        target["start_command"] = server_script %\
+        target["start_command"] = iperf_server_skeleton %\
                                   (target["name"], port)
         t = threading.Thread(target=start_server, args=(target, ))
         t.start()
@@ -125,7 +143,7 @@ def measure_iperf():
             continue
         print "Starting iperf client on: ", node["name"]
         # ip address - time - interval - bandwidth Mbitps - port
-        cmd = iperf_skeleton %\
+        cmd = iperf_client_skeleton %\
               (targets[0]["name"], 10, 1, 100, port)
         stdout, stderr = node["connection"].\
             runCommand(cmd, timeout=15)
