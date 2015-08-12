@@ -15,14 +15,15 @@ import trparse
 
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 
+
+#=================================================
+# Classes
+
+
 class Measure:
     """ This class helps to do a...
     """
 
-    connection_builder = None
-
-    def set_ConnectionBuilder(self, conBuilder):
-        TracerouteMeasure.connection_builder = conBuilder
 
     def __init__(self, fromNode, toIP):
         """
@@ -61,7 +62,8 @@ class Measure:
                     self.error = "not valid ip address or DNS name"
                     return False
             try:
-                self.connection = self.connection_builder.getConnection(self.fromIP)
+                self.connection = ConnectionBuilder.\
+                    singleton.getConnection(self.fromIP)
                 return True
             except paramiko.AuthenticationException:
                 self.errorTrace = traceback.format_exc()
@@ -185,56 +187,100 @@ class Measure:
         return res#json.dumps(res)
 
 
+class IperfServer:
+
+    def __init__(self, ip, port):
+        self.ip = ip
+        self.port = port
+        self.connected = False
+
+    def connect(self):
+        info, self.connection = ConnectionBuilder.\
+            getConnectionSafe(self.ip)
+
+        self.online = info["online"]
+        self.error = info["error"]
+        self.errorTrace = info["errorTrace"]
+        self.ip = info["ip"]
+        self.dns = info["dns"]
+
+    def start(self):
+        print "Starting iperf server on: ", self.toIP
+        start_command = self.start_server_skeleton %\
+                        (self.toIP, self.server_port)
+        stdout, stderr = self.connection.runCommand(start_command, timeout=None)
+        self.server = stdout
+        target["stderr"] = stderr
+        print "Iperf server on %s ended." % target["name"]
+
+        print "Checking for error..."
+        if len(stderr) > 0:
+            print "Errors found:"
+            print stderr
+
+        print "Normal output:"
+        print stdout
+
+
 class IperfMeasure(Measure):
 
+    # Interface, Port
+    start_server_skeleton = 'iperf -s -B %s -u -p %d'
 
-    def __init__(self, from_ip, to_ip, duration):
+
+    class Client:
+        pass
+
+    def __init__(self, from_ip, to_ip, duration, server_port=5200):
         Measure.__init__(self, from_ip, to_ip)
         self.duration = duration
         self.iperf = None
+        self.server_port = server_port
 
-    def _startServer(self):
-        pass
-
-    def _startClient(self):
-        pass
-
-    def runIperf(self):
+    def _check_iperf_installation(self):
+        cmd_test = "iperf -v"
+        not_installed_test = "iperf: command not found"
+        installed_test = "iperf version"
         if self.error != None:
+            self.iperf_install = "Not checking install: Error at previous state"
             return False
-        #self.runScript("traceroute", traceroute_skeleton)
 
         try:
-            command = traceroute_skeleton%self.toIP
-            if sudo:
-                command = "sudo "+command
-
-            self.timeStamp = getTime()
-            outp, err = self.connection.runCommand(command)
-        except IOError:
-            self.errorTrace = traceback.format_exc()
-            self.error = "IOError"
-            return False
+            outp, err = self.connection.runCommand(cmd_test)
         except Exception:
-            self.errorTrace = traceback.format_exc()
-            self.error = "RemoteExecutionError"
+            self.iperf_install = "Error checking install: "+traceback.format_exc()
             return False
 
         errLines = err.splitlines()
         if len(errLines) > 0:
-            for line in errLines:
-                if "bind" in line:
-                    if sudo:
-                        break
-                    else:
-                        return self.runTraceroute(sudo=True)
-            self.errorTrace = err
-            self.error = "RuntimeError"
+            self.iperf_install = "Error checking install: " + err
             return False
 
-        self.rawResult = outp
-        return True
+        if installed_test in outp:
+            self.iperf_install = "installed"
+            return True
+        elif not_installed_test in outp:
+            self.iperf_install = "not installed"
+            return False
+        else:
+            self.iperf_install = "Error checking install: " + outp
+            return False
 
+
+
+    def _startClient(self):
+        pass
+
+    def runIperf(self, sudo=False):
+        iperf_skeleton = ""
+        self.runScript("iperf", iperf_skeleton)
+
+        self._startServer()
+        self._startClient()
+
+
+
+        return True
 
 
 class TracerouteMeasure(Measure):
@@ -341,19 +387,15 @@ class TracerouteMeasure(Measure):
                 pairs.append([probe.ip, probe.name])
         return pairs
 
-def validIP(ip):
-    numOfSegments = 0
-    for segment in ip.split("."):
-        numOfSegments += 1
-        if not segment.isdigit() or int(segment) > 255:
-            return False
-    if numOfSegments != 4:
-        return False
-    return True
+
+#=================================================
+# Functions
+
 
 def getTime():
     now = datetime.now()
     return "{:0>2d}:{:0>2d}:{:0>2d}".format(now.hour, now.minute, now.second)
+
 
 def getDate():
     today = date.today()

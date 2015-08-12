@@ -25,7 +25,8 @@ traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 # ip address - time - interval - bandwidth Mbitps - port
 iperf_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
 
-used_threads        = 20
+used_procs   = 10
+used_threads = 10
 
 RUN_MEASURES = ["iperf"]#, "traceroute"]
 
@@ -39,101 +40,36 @@ nodes = []
 measures = []
 results = []
 
-connBuilder = ConnectionBuilder(slice_name, rsa_file, None)
-TracerouteMeasure.connection_builder = connBuilder
+
+Connection.connectionbuilder =\
+    ConnectionBuilder(slice_name, rsa_file, None)
 
 
 def main():
-    test()
+    measure_iperf()
 
     exit()
     init()
     measure()
     persist()
 
-def install_iperf(con, ip):
-    print "Install node: ", ip
-    cmd_install = "sudo yum install -y iperf"
-    con.runCommand(cmd_install)
+def start_client(target):
+    pass
 
-def check_iperf(node):
-    cmd_install = "sudo yum install -y iperf"
-    cmd_test = "iperf -v"
-    not_installed_test = "iperf: command not found"
-    installed_test = "iperf version"
+def start_server(target):
+    print "Starting iperf server on: ", target["name"]
+    stdout, stderr = target["connection"].runCommand(target["start_command"], timeout=None)
+    target["stdout"] = stdout
+    target["stderr"] = stderr
+    print "Iperf server on %s ended." % target["name"]
 
-    print "Check node: ", node
+    print "Checking for error..."
+    if len(stderr) > 0:
+        print "Errors found:"
+        print stderr
 
-    if not ping(node):
-        return "offline"
-
-    try:
-        con = connBuilder.getConnection(node)
-    except Exception:
-        return "connection fail"
-
-    try:
-        err, outp = con.runCommand(cmd_test)
-    except Exception:
-        return "runtime error"
-
-    if len(err) > 0:
-        return "runtime error"
-
-    if installed_test in outp:
-        version = outp.split(" ")[2]
-        return "installed - version: %s" % version
-
-    try:
-        install_iperf(con, node)
-    except Exception:
-        return "install failed: "+ traceback.format_exc().splitlines()[-1]
-
-    try:
-        err, outp = con.runCommand(cmd_test)
-    except Exception:
-        return "install failed: "+ traceback.format_exc().splitlines()[-1]
-
-    if len(err) > 0:
-        return "install failed: "+ err.splitlines()[-2:-1]
-
-    if installed_test in outp:
-        version = outp.split(" ")[2]
-        return "freshly installed - version: %s" % version
-
-    return "install failed: "+outp
-
-def inception(nodes):
-    return thread_map(check_iperf, nodes, used_threads)
-
-def test():
-    global used_threads
-
-    print "get node list"
-    nodes = getPlanetLabNodes(slice_name)
-    used_procs = 10
-    used_threads = 10
-
-    print "start scanning on %d threads" % (used_threads*used_procs)
-    # results = thread_map(install_iperf, nodes, used_threads)
-    # results = proc_map(install_iperf, nodes, used_threads)
-
-    node_lists   = splitList(nodes, int(len(nodes)/used_procs))
-    result_lists = proc_map(inception, node_lists, used_procs)
-    results      = glueList(result_lists)
-
-    print "--------------------"
-    c = Counter(results)
-    print "Results:"
-
-    stats = {"date": getDate(), "time": getTime()}
-    for item in c.most_common():
-        stats[item[0]] = item[1]
-
-    print json.dumps(stats, indent=2)
-
-    with open("results/installations.json", "w") as f:
-        f.write(json.dumps(stats, indent=2))
+    print "Normal output:"
+    print stdout
 
 def measure_iperf():
     global target_names
@@ -144,40 +80,28 @@ def measure_iperf():
     targets = []
     target = None
     print "Test started"
-    try:
-        for target_name in target_names:
-            target = {
-                "name": target_name,
-                "connection": connBuilder.getConnection(target_name, target_username)
-            }
-            print "Connected to target: ", target_name
-            targets.append(target)
-    except:
-        print "Error at connecting to target: ", target
-        print traceback.format_exc()
-        exit()
+    #try:
+    for target_name in target_names:
+        target = {
+            "name": target_name,
+            "connection": Connection(target_name, target_username)
+        }
+        target["connection"].connect()
+        print "Connected to target: ", target_name
+        targets.append(target)
+    #except:
+    #    print "Error at connecting to target server: ", target
+    #    print traceback.format_exc()
+    #    exit()
 
     for target in targets:
-        def startServer(target):
-            print "Starting iperf server on: ", target["name"]
-            cmd = server_script % target["name"], port
-            stdout, stderr = target["connection"].runCommand(cmd)
-            target["stdout"] = stdout
-            target["stderr"] = stderr
-            print "Iperf server on %s ended." % target["name"]
-
-            print "Checking for error..."
-            if len(stderr) > 0:
-                print "Errors found:"
-                print stderr
-
-            print "Normal output:"
-            print stdout
-
-        t = threading.Thread(target=startServer, args=(target, ))
+        target["start_command"] = server_script %\
+                                  (target["name"], port)
+        t = threading.Thread(target=start_server, args=(target, ))
         t.start()
         target["thread"] = t
 
+    sleep(1)
     print "Starting clients:"
     node_names = bestNodes()[0:1]
     nodes = []
@@ -194,10 +118,17 @@ def measure_iperf():
 
     print "Connections built to nodes."
 
-
     for node in nodes:
+        node["iperf_installation"] = check_iperf(node["name"])
+        print node["iperf_installation"]
+        if "installed" not in node["iperf_installation"]:
+            continue
         print "Starting iperf client on: ", node["name"]
-        stdout, stderr = node["connection"].runCommand(iperf_skeleton)
+        # ip address - time - interval - bandwidth Mbitps - port
+        cmd = iperf_skeleton %\
+              (targets[0]["name"], 10, 1, 100, port)
+        stdout, stderr = node["connection"].\
+            runCommand(cmd, timeout=15)
         node["stdout"] = stdout
         node["stderr"] = stderr
         print "Iperf server on %s ended." % node["name"]
@@ -209,10 +140,6 @@ def measure_iperf():
 
         print "Normal output:"
         print stdout
-
-
-
-
 
     print "Close servers"
     for target in targets:
@@ -319,41 +246,134 @@ def bestNodes():
             ]
 
 
-def scan_planet_lab():
+def install_iperf(con, ip):
+    print "Install node: ", ip
+    cmd_install = "sudo yum install -y iperf"
+    con.runCommand(cmd_install, timeout=25)
+
+
+def check_iperf(node):
+    cmd_install = "sudo yum install -y iperf"
+    cmd_test = "iperf -v"
+    not_installed_test = "iperf: command not found"
+    installed_test = "iperf version"
+
+    print "Check node: ", node
+
+    if not ping(node):
+        return "offline"
+
+    try:
+        con = connBuilder.getConnection(node)
+    except Exception:
+        return "connection fail"
+
+    try:
+        err, outp = con.runCommand(cmd_test)
+    except Exception:
+        return "runtime error"
+
+    if len(err) > 0:
+        return "runtime error"
+
+    if installed_test in outp:
+        version = outp.split(" ")[2]
+        return "installed - version: %s" % version
+
+    if not_installed_test not in outp:
+        return "installation abbandoned: " + outp
+
+    try:
+        install_iperf(con, node)
+    except Exception:
+        return "install failed: "+\
+               traceback.format_exc().splitlines()[-1]
+
+    try:
+        err, outp = con.runCommand(cmd_test)
+    except Exception:
+        return "install failed: "+\
+               traceback.format_exc().splitlines()[-1]
+
+    if len(err) > 0:
+        return "install failed: "+ err.splitlines()[-2:-1]
+
+    if installed_test in outp:
+        version = outp.split(" ")[2]
+        return "freshly installed - version: %s" % version
+
+    return "install failed: "+outp
+
+
+def inception(nodes):
+    return thread_map(check_iperf, nodes, used_threads)
+
+
+def testOs(node_ip):
+    cmd = "cat /etc/issue"
+    node = {"ip": node_ip}
+    online = ping(node["ip"])
+    node["online"] = online
+    if not online:
+        return node
+
+    try:
+        con = connBuilder.getConnection(node["ip"])
+    except Exception:
+        error_lines = traceback.format_exc().splitlines()
+        node["error"] = error_lines[-1]
+        return node
+    try:
+        outp, err = con.runCommand(cmd)
+    except Exception:
+        error_lines = traceback.format_exc().splitlines()
+        node["error"] = error_lines[-1]
+        return node
+
+    if len(err) > 0:
+        node["error"] = err
+        return node
+
+    node["outp"] = outp
+
+    if "Fedora" in outp or "CentOS" in outp:
+        node["os"] = outp.split("\n")[0]
+
+    return node
+
+
+def scan_iperf_installations():
+    print "get node list"
+    nodes = getPlanetLabNodes(slice_name)
+
+    print "start scanning on %d threads" % (used_threads*used_procs)
+    # results = thread_map(install_iperf, nodes, used_threads)
+    # results = proc_map(install_iperf, nodes, used_threads)
+
+    node_lists   = splitList(nodes, int(len(nodes)/used_procs))
+    result_lists = proc_map(inception, node_lists, used_procs)
+    results      = glueList(result_lists)
+
+    print "--------------------"
+    c = Counter(results)
+    print "Results:"
+
+    stats = {"date": getDate(), "time": getTime()}
+    for item in c.most_common():
+        stats[item[0]] = item[1]
+
+    print json.dumps(stats, indent=2)
+
+    with open("results/installations.json", "w") as f:
+        f.write(json.dumps(stats, indent=2))
+
+
+def scan_os_types():
     print "get planet lab ip list"
     node_ips = getPlanetLabNodes(slice_name)
 
-    def do_it(node_ip):
-        cmd = "cat /etc/issue"
-        node = {"ip": node_ip}
-        online = ping(node["ip"])
-        node["online"] = online
-        if not online:
-            return node
-
-        try:
-            con = connBuilder.getConnection(node["ip"])
-        except Exception:
-            error_lines = traceback.format_exc().splitlines()
-            node["error"] = error_lines[-1]
-            return node
-        try:
-            outp, err = con.runCommand(cmd)
-        except Exception:
-            error_lines = traceback.format_exc().splitlines()
-            node["error"] = error_lines[-1]
-            return node
-
-        if len(err) > 0:
-            node["error"] = err
-            return node
-
-        node["outp"] = outp
-
-        return node
-
     print "start scanning them "
-    nodes = thread_map(do_it, node_ips, used_threads)
+    nodes = thread_map(testOs, node_ips, used_threads)
 
     print "write out the results"
     with open("results/scan.json", "w") as f:
@@ -417,11 +437,13 @@ def splitList(list, splitLen):
 
     return splitted_list
 
+
 def glueList(list_of_lists):
     results = []
     for list in list_of_lists:
         results.extend(list)
     return results
+
 
 if __name__ == "__main__":
     main()

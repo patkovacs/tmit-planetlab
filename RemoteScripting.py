@@ -9,18 +9,60 @@ import subprocess
 import traceback
 import socket
 
+
 # Constants
 API_URL         = 'https://www.planet-lab.eu:443/PLCAPI/'
 PLC_CREDENTIALS = 'ssh_needs/credentials.private'
 
 
+#=================================================
 # Classes
+
+
 class Connection:
     """ This class represents an SSH connection to a remote server.
         It can be used to run c
     """
-    def __init__(self, ssh):
-        self.ssh = ssh
+    connectionbuilder = None
+
+
+    def __init__(self, target, username=None, conBuilder=None):
+        if conBuilder is None:
+            self.conBuilder = Connection.connectionbuilder
+        else:
+            self.conBuilder = conBuilder
+        self.target = target
+        self.username= username
+        self.ssh = None
+
+    def connect(self, timeout=5):
+        self.ssh = self.conBuilder.getConnection(self.target, self.username, timeout)
+
+    def testOS(self):
+        # TODO: Test it!
+        cmd = "cat /etc/issue"
+        os_names = ["Linux", "Ubuntu", "Debian", "Fedora", "Red Hat", "CentOS"]
+        result = {}
+
+        try:
+            outp, err = self.runCommand(cmd)
+        except Exception:
+            error_lines = traceback.format_exc().splitlines()
+            result["error"] = error_lines[-1]
+            return result
+
+        if len(err) > 0:
+            result["error"] = err
+            return result
+
+        result["outp"] = outp
+
+        # Check for official distribution name in output
+        if any([os_name.lower() in result["os"].lower()
+                for os_name in os_names]):
+            result["os"] = outp.split("\n")[0]
+
+        return result
 
     def runCommand(self, command, timeout=10):
         if self.ssh == None:
@@ -34,6 +76,7 @@ class Connection:
     def disconnect(self):
         self.ssh.close()
         self.ssh = None
+
 
 class ConnectionBuilder:
     """ This class helps to build up an SSH connection to a remote server.
@@ -63,10 +106,43 @@ class ConnectionBuilder:
             username = self.slice_name
 
         ssh.connect(target, username=username, key_filename=self.private_key, timeout=timeout)
-        return Connection(ssh)
+        return ssh
+
+    def getConnectionSafe(self, target, username=None, timeout=5):
+        info = {}
+        info["online"] = ping(target)
+        if info["online"]:
+            if not validIP(target):
+                info["dns"] = target
+                info["ip"] = getIP_fromDNS(target)
+                if info["ip"] == None:
+                    info["error"] = "not valid ip address or DNS name"
+                    return info, None
+            try:
+                con = self.getConnection(info["ip"], username, timeout)
+                return info, con
+            except paramiko.AuthenticationException:
+                info["errorTrace"] = traceback.format_exc()
+                info["error"] = "AuthenticationError"
+                return info, None
+            except paramiko.BadHostKeyException:
+                info["errorTrace"] = traceback.format_exc()
+                info["error"] = "BadHostKeyError"
+                return info, None
+            except:
+                info["errorTrace"] = traceback.format_exc()
+                info["error"] = "ConnectionError"
+                return info, None
+
+        info["errorTrace"] = "Offline"
+        info["error"] = "Offline"
+        return info, None
 
 
+#=================================================
 # Functions
+
+
 def getPlanetLabNodes(slice_name):
     global PLC_CREDENTIALS, API_URL
 
@@ -86,12 +162,25 @@ def getPlanetLabNodes(slice_name):
     # Useful other fields: boot_state, site_id, last_contact
     # GetSites (auth, site_filter, return_fields)--> longitude , latitude
 
+
 def getIP_fromDNS(hostname):
     try:
         ret = socket.gethostbyname(hostname)
     except socket.gaierror:
         ret = None
     return ret
+
+
+def validIP(ip):
+    numOfSegments = 0
+    for segment in ip.split("."):
+        numOfSegments += 1
+        if not segment.isdigit() or int(segment) > 255:
+            return False
+    if numOfSegments != 4:
+        return False
+    return True
+
 
 def ping(hostname, silent=True):
     try:
