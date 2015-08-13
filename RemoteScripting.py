@@ -10,6 +10,8 @@ import traceback
 import socket
 from threading import Thread
 import time
+import logging
+import simplejson as json
 
 
 # Constants
@@ -39,10 +41,12 @@ class Connection:
         self.online = None
         self.error = None
         self.errorTrace = None
+        id = str(ip).replace(".", "_")
+        self.log = logging.getLogger(id+".connection")
 
     def connect(self, timeout=5):
-        info, self.connection = self.conBuilder.\
-            getConnectionSafe(self.ip)
+        info, self.ssh = self.conBuilder.\
+            getConnectionSafe(self.ip, self.username)
 
         self.online = info["online"]
         self.error = info["error"]
@@ -51,6 +55,7 @@ class Connection:
         self.dns = info["dns"]
         self.stderr = None
         self.stdout = None
+        self.log.info("connection result: "+json.dumps(info))
 
     def testOS(self):
         # TODO: Test it!
@@ -87,16 +92,24 @@ class Connection:
             self.errorTrace = self.stderr
 
     def startCommand(self, script):
+        if self.ssh == None:
+            raise RuntimeWarning("Connection not alive!")
+
         def run(self):
             self.running = True
+            self.ended = False
             self.startTime = time.time()
             try:
-                self.stdout, self.stderr = self.connection.\
+                self.stdout, self.stderr = self.ssh.\
                     runCommand(script, timeout=None)
             except Exception:
                 self.errorTrace = traceback.format_exc()
-                self.error = "ErrorExecutingRemoteComamnd:"+\
+                self.error = "ErrorExecutingRemoteCommand:"+\
                     self.errorTrace.splitlines()[-1]
+            else:
+                self.endTime = time.time()
+                if "timeout: timed out" in self.stderr:
+                    self.error = "SSH connection timeout. duration: %d" % (self.endTime - self.startTime)
             self.endTime = time.time()
             self.running = False
             self.ended = True
@@ -105,7 +118,7 @@ class Connection:
 
         self.thread.start()
 
-    def runCommand(self, command, timeout=10):
+    def runCommand(self, command, timeout=5):
         if self.ssh == None:
             raise RuntimeWarning("Connection not alive!")
 
@@ -136,7 +149,7 @@ class ConnectionBuilder:
 
     def getConnection(self, target, username=None, timeout=5):
         ssh = paramiko.SSHClient()
-        paramiko.util.log_to_file("paramiko.log")
+        #paramiko.util.log_to_file("paramiko.log")
 
         if self.knownHosts != None:
             ssh.load_host_keys(self.knownHosts)
@@ -154,6 +167,8 @@ class ConnectionBuilder:
         info = {}
         info["ip"] = target
         info["dns"] = target
+        info["error"] = None
+        info["errorTrace"] = None
 
         if not validIP(target):
             info["ip"] = getIP_fromDNS(target)

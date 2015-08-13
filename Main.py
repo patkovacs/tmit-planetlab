@@ -49,11 +49,31 @@ results = []
 Connection.connectionbuilder =\
     ConnectionBuilder(slice_name, rsa_file, None)
 
+import logging
+class MyFilter(logging.Filter):
+    def filter(self, record):
+
+        return "paramiko" not in record.name
+
+logger = paramiko.util.logging.getLogger()#logging.getLogger()
+handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter(
+        '[%(asctime)s][%(name)s] %(message)s', datefmt='%M.%S')
+handler.setFormatter(formatter)
+handler.addFilter(MyFilter())
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 def main():
-    measure_iperf_2()
+    logger.info("Program started")
 
+    measure_iperf_3()
+
+    logger.info("Saving results")
+    persist()
+    logger.info("Program ened")
     exit()
+
     init()
     measure()
     persist()
@@ -73,22 +93,45 @@ def start_server(target):
     print "Normal output:"
     print stdout
 
-def measure_iperf_2():
+
+def measure_iperf_3():
     port = 5200
-    duration = 10
-    node_names = bestNodes()[:5]
+    duration = 6
+    node_names = bestNodes()[:1]
     nodes = []
 
+    logger.info("Initializing iperf measures")
     for node_name in node_names:
-        measure = IperfMeasure(node_name, target_names[0], port)
-        nodes.append(measure)
-        measure = IperfMeasure(node_name, target_names[1], port)
+        measure = ParalellMeasure()
+        measure1 = IperfMeasure(node_name, target_names[0], target_username, port, duration)
+        measure2 = IperfMeasure(node_name, target_names[1], target_username, port, duration)
+        measure.addMeasure(measure1, 0)
+        measure.addMeasure(measure2, 3)
         nodes.append(measure)
 
     for node in nodes:
-        node.runIperf(duration)
+        node.startMeasure()
+        node.join()
+        print node.getData()
 
-    print "Happy End"
+def measure_iperf_2():
+    port = 5200
+    duration = 3
+    node_names = bestNodes()[:1]
+    nodes = []
+
+    logger.info("Initializing iperf measures")
+    for node_name in node_names:
+        measure = IperfMeasure(node_name, target_names[0], target_username, port)
+        nodes.append(measure)
+        measure = IperfMeasure(node_name, target_names[1], target_username, port)
+        nodes.append(measure)
+
+    logger.info("Running measures")
+    for node in nodes:
+        node.runIperf(duration)
+        measures.append(node)
+
 
 def measure_iperf():
     global target_names
@@ -127,7 +170,7 @@ def measure_iperf():
         for node_name in node_names:
             node = {
                 "name": node_name,
-                "connection": connBuilder.getConnection(node_name)
+                "connection": Connection(node_name)
             }
             print "Connected to node: ", node_name
             nodes.append(node)
@@ -186,7 +229,7 @@ def persist():
     global results
 
     for measure in measures:
-        data = measure.getData(sendError=False)
+        data = measure.getData()
         if data is not None:
             results.append(data)
 
