@@ -67,7 +67,7 @@ logger.setLevel(logging.INFO)
 def main():
     logger.info("Program started")
 
-    measure_iperf_3()
+    measure_iperf()
 
     logger.info("Saving results")
     persist()
@@ -78,23 +78,8 @@ def main():
     measure()
     persist()
 
-def start_server(target):
-    print "Starting iperf server on: ", target["name"]
-    stdout, stderr = target["connection"].runCommand(target["start_command"], timeout=None)
-    target["stdout"] = stdout
-    target["stderr"] = stderr
-    print "Iperf server on %s ended." % target["name"]
 
-    print "Checking for error..."
-    if len(stderr) > 0:
-        print "Errors found:"
-        print stderr
-
-    print "Normal output:"
-    print stdout
-
-
-def measure_iperf_3():
+def measure_iperf():
     port = 5200
     duration = 6
     node_names = bestNodes()[:1]
@@ -103,112 +88,21 @@ def measure_iperf_3():
     logger.info("Initializing iperf measures")
     for node_name in node_names:
         measure = ParalellMeasure()
-        measure1 = IperfMeasure(node_name, target_names[0], target_username, port, duration)
-        measure2 = IperfMeasure(node_name, target_names[1], target_username, port, duration)
-        measure.addMeasure(measure1, 0)
-        measure.addMeasure(measure2, 3)
+        delta = 0
+
+        for target in target_names:
+            iperf = IperfMeasure(node_name, target, target_username, port, duration)
+            traceroute = TracerouteMeasure(node_name, target)
+            measure.addMeasure(iperf, delta)
+            measure.addMeasure(traceroute, delta)
+            delta += int(duration/2)
+
         nodes.append(measure)
 
     for node in nodes:
         node.startMeasure()
         node.join()
         print node.getData()
-
-def measure_iperf_2():
-    port = 5200
-    duration = 3
-    node_names = bestNodes()[:1]
-    nodes = []
-
-    logger.info("Initializing iperf measures")
-    for node_name in node_names:
-        measure = IperfMeasure(node_name, target_names[0], target_username, port)
-        nodes.append(measure)
-        measure = IperfMeasure(node_name, target_names[1], target_username, port)
-        nodes.append(measure)
-
-    logger.info("Running measures")
-    for node in nodes:
-        node.runIperf(duration)
-        measures.append(node)
-
-
-def measure_iperf():
-    global target_names
-    node_names = ["194.29.178.14"]
-    port = 5200
-    targets = []
-    target = None
-    print "Test started"
-    #try:
-    for target_name in target_names:
-        target = {
-            "name": target_name,
-            "connection": Connection
-            (target_name, target_username)
-        }
-        target["connection"].connect()
-        print "Connected to target: ", target_name
-        targets.append(target)
-    #except:
-    #    print "Error at connecting to target server: ", target
-    #    print traceback.format_exc()
-    #    exit()
-
-    for target in targets:
-        target["start_command"] = iperf_server_skeleton %\
-                                  (target["name"], port)
-        t = threading.Thread(target=start_server, args=(target, ))
-        t.start()
-        target["thread"] = t
-
-    sleep(1)
-    print "Starting clients:"
-    node_names = bestNodes()[0:1]
-    nodes = []
-    try:
-        for node_name in node_names:
-            node = {
-                "name": node_name,
-                "connection": Connection(node_name)
-            }
-            print "Connected to node: ", node_name
-            nodes.append(node)
-    except:
-        print "Error at connecting to node: ", target
-
-    print "Connections built to nodes."
-
-    for node in nodes:
-        node["iperf_installation"] = check_iperf(node["name"])
-        print node["iperf_installation"]
-        if "installed" not in node["iperf_installation"]:
-            continue
-        print "Starting iperf client on: ", node["name"]
-        # ip address - time - interval - bandwidth Mbitps - port
-        cmd = iperf_client_skeleton %\
-              (targets[0]["name"], 10, 1, 100, port)
-        stdout, stderr = node["connection"].\
-            runCommand(cmd, timeout=15)
-        node["stdout"] = stdout
-        node["stderr"] = stderr
-        print "Iperf server on %s ended." % node["name"]
-
-        print "Checking for error..."
-        if len(stderr) > 0:
-            print "Errors found:"
-            print stderr
-
-        print "Normal output:"
-        print stdout
-
-    print "Close servers"
-    for target in targets:
-        target["connection"].disconnect()
-    print "Test ended"
-
-
-    # Start iperf client on node and get results
 
 
 def init():
