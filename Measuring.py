@@ -13,6 +13,8 @@ sys.path.append("utils")
 import trparse
 import random
 import logging
+from ASN_Lookup import get_asn
+from Geoloc_Lookup import get_geoloc
 
 
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
@@ -44,6 +46,10 @@ class Measure:
         self.online     = None
         self.date       = getDate()
         self.timeStamp  = getTime()
+
+    def setScript(self, name, script):
+        self.script = script
+        self.name = name
 
     def connect(self):
         if self.error != None:
@@ -89,6 +95,9 @@ class Measure:
         self.error = "Offline"
         return False
 
+    def run(self):
+        self.runScript(self.name, self.script)
+
     def disconnect(self):
         if self.connection != None:
             self.connection.disconnect()
@@ -110,7 +119,7 @@ class Measure:
             if sudo:
                 command = "sudo "+command
 
-            self.timeStamp = time.getTime()
+            self.timeStamp = time.time()
             outp, err = self.connection.runCommand(command)
         except IOError:
             self.errorTrace = traceback.format_exc()
@@ -136,6 +145,11 @@ class Measure:
         self.rawResults[name] = outp
         return True
 
+    def startScript(self, name, skeleton):
+        thread = Thread(target=self.run, args=(self, ))
+        thread.start()
+        self.thread = thread
+
     def getData(self, sendError=True, sendErrorTrace=False):
         if not sendError and self.error != None:
             return None # we do not send errorous measurements
@@ -145,6 +159,9 @@ class Measure:
                 "online": self.online,
                 "from":   self.fromIP,
                 "to":     self.toIP}
+
+        if len(self.rawResults) > 0:
+            res[self.name] = self.rawResults[self.name]
 
         if sendError and self.error != None:
             res["error"] = self.error
@@ -161,7 +178,7 @@ class IperfMeasure(Measure):
     # Interface, Port
     start_server_skeleton = 'iperf -s -B %s -u -p %d'
     # ip address - port - duration - interval - bandwidth Mbitps
-    start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m"
+    start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m -i 1"
 
     def __init__(self, from_ip, to_ip, server_username, server_port=5200, duration=None):
         Measure.__init__(self, from_ip, to_ip)
@@ -229,6 +246,8 @@ class IperfMeasure(Measure):
 
         if "installed" != self.iperf_install:
             log.info("Measurement aborted, iperf not installed")
+            self.client.error = "IperfNotInstalled"
+            self.client.errorTrace = self.client.error
             return False
 
         cmd = self.start_client_skeleton %\
@@ -239,8 +258,10 @@ class IperfMeasure(Measure):
         log.info("Client ended")
 
         log.info("Output: %s", self.client.stdout)
-        if len(self.client.stderr) > 0:
+        if len(self.client.stderr) > 0 and "WARNING:" not in self.client.stderr:
             log.info("Error at remote execution: %s", self.client.stderr)
+            self.client.error = "RemoteRuntimeError"
+            self.client.errorTrace = self.client.stderr
             return False
 
         return True
@@ -272,8 +293,10 @@ class IperfMeasure(Measure):
         self.log.info("Stopping server")
         self.server.endCommand()
         self.log.info("Server stopped")
+        self.log.info("Server output: "+self.server.stdout)
+        self.log.info("Server error: "+self.server.stderr)
 
-    def runIperf(self, duration=None, bandwidth=100):
+    def runIperf(self, duration=None, bandwidth=20):
         if duration is None:
             duration = self.duration
         self.duration = duration
@@ -287,6 +310,7 @@ class IperfMeasure(Measure):
             self.errorTrace = self.server.errorTrace
             return
 
+        time.sleep(2)
         self.log.info("Starting client")
         successful = self._startClient(duration, bandwidth=bandwidth)
         if not successful:
@@ -332,7 +356,6 @@ class ParalellMeasure:
         start = time.time()
         for item in self.measures:
             dist = start-time.time()+item["startTime"]
-            print "dist: ", dist
             if dist > 0:
                 time.sleep(dist)
             thread = Thread(target=run, args=(item["measure"], ))
@@ -359,16 +382,36 @@ class TracerouteMeasure(Measure):
     def __init__(self, from_ip, to_ip):
         Measure.__init__(self, from_ip, to_ip)
         self.traceroute = None
+        self.id = str(self.fromIP).replace(".", "_")
+        self.log = logging.getLogger().getChild(self.id+".traceroute")
 
 
     def getData(self, sendError=True, sendErrorTrace=False):
         res = Measure.getData(self, sendError, sendErrorTrace)
         if self.error is None:
             res["trace"] = self.rawResult
+
+        if len(self.ip_data) > 0:
+            res["ip_data"] = self.ip_data
+
         return res
 
     def runTraceroute(self, sudo=False):
+        log = self.log
+
+        self.connection = Connection(self.fromIP)
+        log.info("Creating connection to remote target")
+        self.connection.connect()
+        self.online = self.connection.online
+        self.error = self.connection.error
+        self.errorTrace = self.connection.errorTrace
+        if self.connection.error is not None:
+            log.info("Abort because of connection error: "+self.connection.error+" ErrorTrace: "+self.connection.errorTrace)
+            return False
+
+
         if self.error != None:
+            log.info("measurement aborted because of a previous error: "+self.error)
             return False
         #self.runScript("traceroute", traceroute_skeleton)
 
@@ -377,27 +420,31 @@ class TracerouteMeasure(Measure):
             if sudo:
                 command = "sudo "+command
 
-            self.timeStamp = time.getTime()
+            self.timeStamp = time.time()
             outp, err = self.connection.runCommand(command)
         except IOError:
             self.errorTrace = traceback.format_exc()
             self.error = "IOError"
+            log.info("IOError!")
             return False
         except Exception:
             self.errorTrace = traceback.format_exc()
-            self.error = "RemoteExecutionError"
+            self.error = "Error executing remote command"
+            log.info("Error at remote execution: "+self.errorTrace)
             return False
 
         errLines = err.splitlines()
         if len(errLines) > 0:
             for line in errLines:
                 if "bind" in line:
+                    log.info("retrying with sudo")
                     if sudo:
                         break
                     else:
                         return self.runTraceroute(sudo=True)
             self.errorTrace = err
             self.error = "RuntimeError"
+            log.info("Runtime error: "+err)
             return False
 
         self.rawResult = outp
@@ -405,6 +452,25 @@ class TracerouteMeasure(Measure):
 
     def run(self):
         self.runTraceroute()
+        self.traceroute = trparse.loads(self.rawResult, self.fromIP)
+        self.links = self.getLinks()
+        if self.links is None:
+            return
+        self.ip_list = []
+        for link in self.links:
+            if link[0] not in self.ip_list:
+                self.ip_list.append(link[0])
+            if link[1] not in self.ip_list:
+                self.ip_list.append(link[1])
+
+        self.ip_data = []
+        for ip in self.ip_list:
+            print "ip: ", ip
+            akt = get_geoloc(ip)
+            #if akt["asn"] == "":
+            #    akt["asn"] = get_asn(ip)
+            print "data: ", akt
+            self.ip_data.append(get_geoloc(ip))
 
     def getLinks(self):
         if self.error != None:

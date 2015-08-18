@@ -100,8 +100,8 @@ class Connection:
             self.ended = False
             self.startTime = time.time()
             try:
-                self.stdout, self.stderr = self.ssh.\
-                    runCommand(script, timeout=None)
+                self.stdout, self.stderr = \
+                    self.runCommand(script, timeout=None)
             except Exception:
                 self.errorTrace = traceback.format_exc()
                 self.error = "ErrorExecutingRemoteCommand:"+\

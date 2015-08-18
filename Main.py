@@ -53,7 +53,7 @@ import logging
 class MyFilter(logging.Filter):
     def filter(self, record):
 
-        return "paramiko" not in record.name
+        return "paramiko" not in record.name and "requests" not in record.name
 
 logger = paramiko.util.logging.getLogger()#logging.getLogger()
 handler = logging.StreamHandler(sys.stdout)
@@ -80,8 +80,9 @@ def main():
 
 
 def measure_iperf():
+    global measures
     port = 5200
-    duration = 6
+    duration = 5
     node_names = bestNodes()[:1]
     nodes = []
 
@@ -90,19 +91,36 @@ def measure_iperf():
         measure = ParalellMeasure()
         delta = 0
 
-        for target in target_names:
-            iperf = IperfMeasure(node_name, target, target_username, port, duration)
-            traceroute = TracerouteMeasure(node_name, target)
-            measure.addMeasure(iperf, delta)
-            measure.addMeasure(traceroute, delta)
-            delta += int(duration/2)
+        traceroute = TracerouteMeasure(node_name, target1)
+        measure.addMeasure(traceroute, 0)
+        traceroute = TracerouteMeasure(node_name, target2)
+        measure.addMeasure(traceroute, 0)
+
+        # Solo target 1
+        iperf = IperfMeasure(node_name, target1, target_username, port, duration)
+        measure.addMeasure(iperf, 0)
+        # Solo target 2
+        iperf = IperfMeasure(node_name, target2, target_username, port, duration)
+        measure.addMeasure(iperf, duration+2)
+
+        # Paralell target 1, 2
+        iperf = IperfMeasure(node_name, target1, target_username, port, duration)
+        measure.addMeasure(iperf, 2*(duration+2))
+        iperf = IperfMeasure(node_name, target2, target_username, port, duration)
+        measure.addMeasure(iperf, 2*(duration+2))
 
         nodes.append(measure)
 
+    logger.info("Starting measurements")
     for node in nodes:
         node.startMeasure()
         node.join()
-        print node.getData()
+        logger.info("-----------------------------\nMeasurement ended:")
+        logger.info(node.getData())
+
+
+
+    measures = nodes
 
 
 def init():
@@ -130,7 +148,8 @@ def persist():
     if len(results) == 0:
         return
 
-    timeStamp = getTime().replace(":", ".")[0:-3] # escape : to . and remove seconds
+    # escape : to . and remove seconds
+    timeStamp = getTime().replace(":", ".")[0:-3]
     filename = 'results/rawTrace_%s_%s.txt'%(getDate(), timeStamp)
     with open(filename,'w') as f:
         f.write(json.dumps(results, indent=2))
