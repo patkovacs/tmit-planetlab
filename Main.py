@@ -52,8 +52,9 @@ Connection.connectionbuilder =\
 import logging
 class MyFilter(logging.Filter):
     def filter(self, record):
-
-        return "paramiko" not in record.name and "requests" not in record.name
+        keywords = ["paramiko", "requests", "urllib3"]
+        return all(map(lambda x: x not in record.name, keywords))
+        #return "paramiko" not in record.name and "requests" not in record.name and "urllib3" not in record.name
 
 logger = paramiko.util.logging.getLogger()#logging.getLogger()
 handler = logging.StreamHandler(sys.stdout)
@@ -78,6 +79,46 @@ def main():
     measure()
     persist()
 
+def create_paralell_iperf(node, target1, target2):
+    measure = ParalellMeasure()
+    measure2 = ParalellMeasure()
+    delta = 0
+    duration = 10
+    port = 5200
+    trace_script = "traceroute -w 5.0 -q 3 %s"
+
+    iperf_server_script = 'iperf -s -B %s -u -p %d'
+    # ip address - port - duration - interval - bandwidth Mbitps
+    start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m -i 1"
+
+    akt = Measure(node, target1)
+    akt.setScript("traceroute", trace_script)
+    measure2.addMeasure(akt, 0)
+
+    akt = Measure(target1, None, "mptcp")
+    akt.setScript("iperf_server", iperf_server_script % (target1, port))
+    measure2.addMeasure(akt, 0)
+
+    """
+    traceroute = TracerouteMeasure(node, target1)
+    measure.addMeasure(traceroute, 0)
+    traceroute = TracerouteMeasure(node, target2)
+    measure.addMeasure(traceroute, 0)
+
+    # Solo target 1
+    iperf = IperfMeasure(node, target1, target_username, port, duration)
+    measure.addMeasure(iperf, 0)
+    # Solo target 2
+    iperf = IperfMeasure(node, target2, target_username, port, duration)
+    measure.addMeasure(iperf, duration+2)
+
+    # Paralell target 1, 2
+    iperf = IperfMeasure(node, target1, target_username, port, duration)
+    measure.addMeasure(iperf, 2*(duration+2))
+    iperf = IperfMeasure(node, target2, target_username, port, duration)
+    measure.addMeasure(iperf, 2*(duration+2))
+    """
+    return measure2
 
 def measure_iperf():
     global measures
@@ -88,28 +129,7 @@ def measure_iperf():
 
     logger.info("Initializing iperf measures")
     for node_name in node_names:
-        measure = ParalellMeasure()
-        delta = 0
-
-        traceroute = TracerouteMeasure(node_name, target1)
-        measure.addMeasure(traceroute, 0)
-        traceroute = TracerouteMeasure(node_name, target2)
-        measure.addMeasure(traceroute, 0)
-
-        # Solo target 1
-        iperf = IperfMeasure(node_name, target1, target_username, port, duration)
-        measure.addMeasure(iperf, 0)
-        # Solo target 2
-        iperf = IperfMeasure(node_name, target2, target_username, port, duration)
-        measure.addMeasure(iperf, duration+2)
-
-        # Paralell target 1, 2
-        iperf = IperfMeasure(node_name, target1, target_username, port, duration)
-        measure.addMeasure(iperf, 2*(duration+2))
-        iperf = IperfMeasure(node_name, target2, target_username, port, duration)
-        measure.addMeasure(iperf, 2*(duration+2))
-
-        nodes.append(measure)
+        nodes.append(create_paralell_iperf(node_name, target1, target2))
 
     logger.info("Starting measurements")
     for node in nodes:
@@ -150,7 +170,7 @@ def persist():
 
     # escape : to . and remove seconds
     timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/rawTrace_%s_%s.txt'%(getDate(), timeStamp)
+    filename = 'results/rawTrace_%s_%s.json'%(getDate(), timeStamp)
     with open(filename,'w') as f:
         f.write(json.dumps(results, indent=2))
 

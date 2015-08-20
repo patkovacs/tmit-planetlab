@@ -29,27 +29,31 @@ class Measure:
     """
 
 
-    def __init__(self, fromNode, toIP):
+    def __init__(self, fromIP, toIP, login_username=None):
         """
-            :param fromNode:    PlanetLab node IP address where traceroute will be executed
+            :param fromIP:    PlanetLab node IP address where traceroute will be executed
             :param toIP:        Target IP address for traceroute
         """
-        self.fromIP     = fromNode
+        self.fromIP     = fromIP
         self.toIP       = toIP
+        self.login_username = login_username
         self.toDNS      = None
         self.fromDNS    = None
         self.connection = None
         self.error      = None
         self.errorTrace = None
         self.rawResult  = None
-        self.rawResults = []
+        self.rawResults = {}
         self.online     = None
         self.date       = getDate()
         self.timeStamp  = getTime()
+        self.id = str(self.fromIP).replace(".", "_")
+        self.log = logging.getLogger().getChild(self.id+".measure")
 
     def setScript(self, name, script):
         self.script = script
         self.name = name
+        self.log = logging.getLogger().getChild(self.id+"."+name)
 
     def connect(self):
         if self.error != None:
@@ -112,22 +116,45 @@ class Measure:
         return True
 
     def runScript(self, name, skeleton, sudo=False):
+        log = self.log.info
         if self.error != None:
+            log("Script running aborted because of a previous error:"+self.error)
+            log("Errortrace of previous error:"+self.errorTrace)
             return False
+
+        self.connection = Connection(self.fromIP, self.login_username)
+        log("Creating connection to remote target")
+        self.connection.connect()
+        self.online = self.connection.online
+        self.error = self.connection.error
+        self.errorTrace = self.connection.errorTrace
+
+        if self.connection.error is not None:
+            log("Abort because of a previous error: "+self.connection.error+\
+                " ErrorTrace: "+self.connection.errorTrace)
+            return False
+
         try:
-            command = skeleton%self.toIP
+            try:
+                command = skeleton%self.toIP
+            except:
+                command = skeleton
+
             if sudo:
                 command = "sudo "+command
 
             self.timeStamp = time.time()
+            log("Executing script: "+command)
             outp, err = self.connection.runCommand(command)
         except IOError:
             self.errorTrace = traceback.format_exc()
             self.error = "IOError"
+            log("Error at execution: IOError:\n"+self.errorTrace)
             return False
         except Exception:
             self.errorTrace = traceback.format_exc()
             self.error = "RemoteExecutionError"
+            log("Error at execution: "+self.errorTrace)
             return False
 
         errLines = err.splitlines()
@@ -140,9 +167,11 @@ class Measure:
                         return self.runScript(name, skeleton, sudo=True)
             self.errorTrace = err
             self.error = "RuntimeError"
+            log("Error at execution (runtime): "+self.errorTrace)
             return False
 
         self.rawResults[name] = outp
+        log("Script excecution suceed: "+outp)
         return True
 
     def startScript(self, name, skeleton):
