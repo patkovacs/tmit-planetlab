@@ -80,45 +80,58 @@ def main():
     persist()
 
 def create_paralell_iperf(node, target1, target2):
-    measure = ParalellMeasure()
-    measure2 = ParalellMeasure()
-    delta = 0
-    duration = 10
-    port = 5200
+    duration  = 5
+    interval  = 1
+    bandwidth = 20
+    port      = 5200
+
+    # target ip address
     trace_script = "traceroute -w 5.0 -q 3 %s"
 
+    # ip interface - port
     iperf_server_script = 'iperf -s -B %s -u -p %d'
+
     # ip address - port - duration - interval - bandwidth Mbitps
     start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m -i 1"
 
+    paralell_measure  = ParalellMeasure()
+
+    # Traceroute
     akt = Measure(node, target1)
     akt.setScript("traceroute", trace_script)
-    measure2.addMeasure(akt, 0)
+    paralell_measure.addMeasure(akt, 0)
 
-    akt = Measure(target1, None, "mptcp")
-    akt.setScript("iperf_server", iperf_server_script % (target1, port))
-    measure2.addMeasure(akt, 0)
+    def addIperf(paralell_measure, name, target, start, duration, bandwidth, port, interval):
+        akt = Measure(target, None, "mptcp")
+        akt.setScript("iperf_server_"+name, iperf_server_script % (target, port), duration+3)
+        paralell_measure.addMeasure(akt, start, True, duration+2)
 
-    """
-    traceroute = TracerouteMeasure(node, target1)
-    measure.addMeasure(traceroute, 0)
-    traceroute = TracerouteMeasure(node, target2)
-    measure.addMeasure(traceroute, 0)
+        akt = Measure(node, target)
+        script = start_client_skeleton % (target, port, duration,
+                                          interval, bandwidth)
+        akt.setScript("iperf_client_"+name, script)
+        paralell_measure.addMeasure(akt, start+1,)
 
-    # Solo target 1
-    iperf = IperfMeasure(node, target1, target_username, port, duration)
-    measure.addMeasure(iperf, 0)
-    # Solo target 2
-    iperf = IperfMeasure(node, target2, target_username, port, duration)
-    measure.addMeasure(iperf, duration+2)
+        return paralell_measure
 
-    # Paralell target 1, 2
-    iperf = IperfMeasure(node, target1, target_username, port, duration)
-    measure.addMeasure(iperf, 2*(duration+2))
-    iperf = IperfMeasure(node, target2, target_username, port, duration)
-    measure.addMeasure(iperf, 2*(duration+2))
-    """
-    return measure2
+    # Iperf
+
+    # Single 1
+    paralell_measure = addIperf(paralell_measure, "single_1", target1,
+                                0, duration, bandwidth, port, interval)
+
+    # Single 2
+    paralell_measure = addIperf(paralell_measure, "single_2", target2,
+                                duration+3, duration, bandwidth, port, interval)
+
+    # Paralell
+    paralell_measure = addIperf(paralell_measure, "paralell_1", target1,
+                                2*(duration+3), duration, bandwidth, port, interval)
+    paralell_measure = addIperf(paralell_measure, "paralell_2", target2,
+                                2*(duration+3), duration, bandwidth, port, interval)
+
+
+    return paralell_measure
 
 def measure_iperf():
     global measures

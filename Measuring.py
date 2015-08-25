@@ -1,20 +1,21 @@
 __author__ = 'Rudolf Horvath'
 __date__ = "2015.06.15"
 
+import sys
+sys.path.append("utils")
 from RemoteScripting import *
 import time
 from datetime import date, datetime
-import sys
 import paramiko
 import simplejson as json
 import zlib
 import base64
-sys.path.append("utils")
 import trparse
 import random
 import logging
 from ASN_Lookup import get_asn
 from Geoloc_Lookup import get_geoloc
+import threading
 
 
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
@@ -45,15 +46,18 @@ class Measure:
         self.rawResult  = None
         self.rawResults = {}
         self.online     = None
+        self.timeout    = 10
         self.date       = getDate()
         self.timeStamp  = getTime()
         self.id = str(self.fromIP).replace(".", "_")
         self.log = logging.getLogger().getChild(self.id+".measure")
 
-    def setScript(self, name, script):
+    def setScript(self, name, script, timeout = 10):
         self.script = script
         self.name = name
+        self.timeout = timeout
         self.log = logging.getLogger().getChild(self.id+"."+name)
+        self.log.info('Set script with name "%s": %s' % (name, script))
 
     def connect(self):
         if self.error != None:
@@ -102,6 +106,15 @@ class Measure:
     def run(self):
         self.runScript(self.name, self.script)
 
+    def end(self):
+        self.log.info("Ending script running")
+        self.disconnect()
+        self.log.info("Ended script running")
+        #self.thread.end()
+
+    def start(self):
+        return self.startScript(self.name, self.script, self.timeout)
+
     def disconnect(self):
         if self.connection != None:
             self.connection.disconnect()
@@ -115,8 +128,9 @@ class Measure:
             return False
         return True
 
-    def runScript(self, name, skeleton, sudo=False):
+    def runScript(self, name, skeleton, sudo=False, timeout=10):
         log = self.log.info
+        log("Running script '%s': %s" % (name, skeleton))
         if self.error != None:
             log("Script running aborted because of a previous error:"+self.error)
             log("Errortrace of previous error:"+self.errorTrace)
@@ -145,7 +159,7 @@ class Measure:
 
             self.timeStamp = time.time()
             log("Executing script: "+command)
-            outp, err = self.connection.runCommand(command)
+            outp, err = self.connection.runCommand(command, timeout = timeout)
         except IOError:
             self.errorTrace = traceback.format_exc()
             self.error = "IOError"
@@ -164,6 +178,7 @@ class Measure:
                     if sudo:
                         break
                     else:
+                        log.info("Failed executing remote script, retrying with sudo. ErrorTrace: "+err)
                         return self.runScript(name, skeleton, sudo=True)
             self.errorTrace = err
             self.error = "RuntimeError"
@@ -174,10 +189,14 @@ class Measure:
         log("Script excecution suceed: "+outp)
         return True
 
-    def startScript(self, name, skeleton):
-        thread = Thread(target=self.run, args=(self, ))
+    def startScript(self, name, skeleton, timeout = 10):
+        self.log.info("Starting remote execution on new thread "\
+                      "(name: '%s', command: %s)" % (name, skeleton))
+        thread = Thread(target=self.runScript,
+                        args=(name, skeleton), kwargs={"timeout": timeout})
         thread.start()
         self.thread = thread
+        return thread
 
     def getData(self, sendError=True, sendErrorTrace=False):
         if not sendError and self.error != None:
@@ -190,7 +209,8 @@ class Measure:
                 "to":     self.toIP}
 
         if len(self.rawResults) > 0:
-            res[self.name] = self.rawResults[self.name]
+            res["name"] = self.name
+            res["result"] = self.rawResults[self.name]
 
         if sendError and self.error != None:
             res["error"] = self.error
@@ -373,8 +393,13 @@ class ParalellMeasure:
     def __init__(self):
         self.measures = []
 
-    def addMeasure(self, measure, startTime):
-        self.measures.append({"measure": measure, "startTime": startTime})
+    def addMeasure(self, measure, startTime, onThread=False, duration=None):
+        self.measures.append({
+            "measure": measure,
+            "startTime": startTime,
+            "onThread": onThread,
+            "duration": duration
+        })
 
     def startMeasure(self):
         self.measures = sorted(self.measures, key=lambda k: k['startTime'])
@@ -387,15 +412,26 @@ class ParalellMeasure:
             dist = start-time.time()+item["startTime"]
             if dist > 0:
                 time.sleep(dist)
-            thread = Thread(target=run, args=(item["measure"], ))
-            thread.start()
-            item["thread"] = thread
+            if item["onThread"]:
+                thread = item["measure"].start()
+                item["thread"] = thread
+                item["shutdown"] = threading.Timer(item["duration"],
+                                           item["measure"].end)
+                item["shutdown"].start()
+
+            else:
+                thread = Thread(target=run, args=(item["measure"], ))
+                thread.start()
+                item["thread"] = thread
 
         print self.measures
 
     def join(self):
         for item in self.measures:
             item["thread"].join()
+            if item.has_key("shutdown"):
+                item["shutdown"].cancel()
+                item["shutdown"].join()
 
     def getData(self):
         res = []
