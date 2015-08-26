@@ -433,11 +433,11 @@ class ParalellMeasure:
                 item["shutdown"].cancel()
                 item["shutdown"].join()
 
-    def getData(self):
+    def getData(self, sendError=True, sendErrorTrace=False):
         res = []
 
         for item in self.measures:
-            res.append(item["measure"].getData())
+            res.append(item["measure"].getData(sendError, sendErrorTrace))
 
         return res
 

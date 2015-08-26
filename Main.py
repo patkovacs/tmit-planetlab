@@ -15,6 +15,7 @@ from multiprocessing import Pool
 import zlib
 import base64
 import paramiko
+import os
 from collections import Counter
 
 # Constants
@@ -66,6 +67,12 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 def main():
+
+    while True:
+        continous_measuring()
+
+    exit()
+
     logger.info("Program started")
 
     measure_iperf()
@@ -78,6 +85,29 @@ def main():
     init()
     measure()
     persist()
+
+def saveOneMeasure(data):
+    timeStamp = getTime().replace(":", ".")[0:-3]
+    filename = 'results/%s/rawTrace_%s_%s.json'%(getDate()+timeStamp[:2], getDate(), timeStamp)
+
+    if not os.path.exists(os.path.dirname(filename)):
+        os.makedirs(os.path.dirname(filename))
+
+    with open(filename,'w') as f:
+        f.write(json.dumps(results, indent=2))
+
+def continous_measuring():
+    nodes = getPlanetLabNodes(slice_name)
+
+    for node in nodes[:2]:
+        akt = create_paralell_iperf(node, target1, target2)
+        akt.startMeasure()
+        akt.join()
+        data = akt.getData(False)
+        if data is not None:
+            saveOneMeasure(data)
+
+
 
 def create_paralell_iperf(node, target1, target2):
     duration  = 5
@@ -148,6 +178,7 @@ def measure_iperf():
     for node in nodes:
         node.startMeasure()
         node.join()
+
         logger.info("-----------------------------\nMeasurement ended:")
         logger.info(node.getData())
 
@@ -318,6 +349,7 @@ def inception(nodes):
 
 def testOs(node_ip):
     cmd = "cat /etc/issue"
+    # uname -r --> gives some more inforamtion about kernel and architecture
     node = {"ip": node_ip}
     online = ping(node["ip"])
     node["online"] = online
@@ -325,7 +357,7 @@ def testOs(node_ip):
         return node
 
     try:
-        con = connBuilder.getConnection(node["ip"])
+        con = Connection.connectionbuilder.getConnection(node["ip"])
     except Exception:
         error_lines = traceback.format_exc().splitlines()
         node["error"] = error_lines[-1]
