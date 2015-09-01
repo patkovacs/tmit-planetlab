@@ -70,6 +70,7 @@ def main():
 
     while True:
         continous_measuring()
+        break
 
     exit()
 
@@ -97,13 +98,19 @@ def saveOneMeasure(data):
         f.write(json.dumps(results, indent=2))
 
 def continous_measuring():
-    nodes = getPlanetLabNodes(slice_name)
+    nodes = bestNodes()[:2]#getPlanetLabNodes(slice_name)
 
-    for node in nodes[:2]:
+    for node in nodes:
+        iperf_check = check_iperf(node)
+        logger.info("Iperf install check on node '%s': %s" % (node, iperf_check))
+        if "installed" not in iperf_check:
+            continue
         akt = create_paralell_iperf(node, target1, target2)
         akt.startMeasure()
         akt.join()
         data = akt.getData(False)
+        print "Error: ", akt.error
+        print "Data: ", data
         if data is not None:
             saveOneMeasure(data)
 
@@ -119,7 +126,7 @@ def create_paralell_iperf(node, target1, target2):
     trace_script = "traceroute -w 5.0 -q 3 %s"
 
     # ip interface - port
-    iperf_server_script = 'iperf -s -B %s -u -p %d'
+    iperf_server_script = 'iperf -s -B %s -u -p %d -i 1'
 
     # ip address - port - duration - interval - bandwidth Mbitps
     start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m -i 1"
@@ -285,61 +292,76 @@ def bestNodes():
 
 
 def install_iperf(con, ip):
-    print "Install node: ", ip
     cmd_install = "sudo yum install -y iperf"
     con.runCommand(cmd_install, timeout=25)
 
 
 def check_iperf(node):
-    cmd_install = "sudo yum install -y iperf"
+    log = logger.getChild(str(node).replace(".", "_")+".checkIperf").info
+    #cmd_install = "sudo yum install -y iperf"
     cmd_test = "iperf -v"
     not_installed_test = "iperf: command not found"
     installed_test = "iperf version"
 
-    print "Check node: ", node
+    log("Check node: "+ node)
 
     if not ping(node):
+        log("offline")
         return "offline"
 
     try:
-        con = connBuilder.getConnection(node)
+        con = Connection(node)
+        con.connect()
+        if con.errorTrace is not None:
+            log("Error at connection: "+con.errorTrace)
     except Exception:
+        log("Error at connection: "+traceback.format_exc())
         return "connection fail"
 
     try:
         err, outp = con.runCommand(cmd_test)
     except Exception:
+        log("Error at remote execution: "+ traceback.format_exc())
         return "runtime error"
 
     if len(err) > 0:
+        log("Runtime error at remote execution: "+err)
         return "runtime error"
 
     if installed_test in outp:
         version = outp.split(" ")[2]
+        log("installed version: "+version)
         return "installed - version: %s" % version
 
     if not_installed_test not in outp:
+        log("Installation not possible: "+outp)
         return "installation abbandoned: " + outp
 
+    log("Installation started")
     try:
         install_iperf(con, node)
     except Exception:
+        log("Installation failed: "+traceback.format_exc())
         return "install failed: "+\
                traceback.format_exc().splitlines()[-1]
 
     try:
         err, outp = con.runCommand(cmd_test)
     except Exception:
+        log("Installation failed: "+traceback.format_exc())
         return "install failed: "+\
                traceback.format_exc().splitlines()[-1]
 
     if len(err) > 0:
+        log("Installation failed: "+err)
         return "install failed: "+ err.splitlines()[-2:-1]
 
     if installed_test in outp:
         version = outp.split(" ")[2]
+        log("Installation suceed, new version: "+version)
         return "freshly installed - version: %s" % version
 
+    log("Installation failed: "+outp)
     return "install failed: "+outp
 
 
