@@ -89,13 +89,13 @@ def main():
 
 def saveOneMeasure(data):
     timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/rawTrace_%s_%s.json'%(getDate()+timeStamp[:2], getDate(), timeStamp)
+    filename = 'results/%s/%s/rawTrace_%s_%s.json'%(getDate(), timeStamp[:2], getDate(), timeStamp)
 
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
 
     with open(filename,'w') as f:
-        f.write(json.dumps(results, indent=2))
+        f.write(json.dumps(data, indent=2))
 
 def continous_measuring():
     nodes = bestNodes()[:2]#getPlanetLabNodes(slice_name)
@@ -109,8 +109,7 @@ def continous_measuring():
         akt.startMeasure()
         akt.join()
         data = akt.getData(False)
-        print "Error: ", akt.error
-        print "Data: ", data
+        #print "Data: ", data
         if data is not None:
             saveOneMeasure(data)
 
@@ -151,22 +150,33 @@ def create_paralell_iperf(node, target1, target2):
 
         return paralell_measure
 
-    # Iperf
+    def addIperf_oneBandwidth_scenario(akt_measure, name_prefix, target1_, target2_, bandwitdh_, start_time):
 
-    # Single 1
-    paralell_measure = addIperf(paralell_measure, "single_1", target1,
-                                0, duration, bandwidth, port, interval)
+        # Iperf
 
-    # Single 2
-    paralell_measure = addIperf(paralell_measure, "single_2", target2,
-                                duration+3, duration, bandwidth, port, interval)
+        # Single 1
+        akt_measure = addIperf(akt_measure, name_prefix+"single_1", target1_,
+                                    start_time, duration, bandwitdh_, port, interval)
 
-    # Paralell
-    paralell_measure = addIperf(paralell_measure, "paralell_1", target1,
-                                2*(duration+3), duration, bandwidth, port, interval)
-    paralell_measure = addIperf(paralell_measure, "paralell_2", target2,
-                                2*(duration+3), duration, bandwidth, port, interval)
+        # Single 2
+        akt_measure = addIperf(akt_measure, name_prefix+"single_2", target2_,
+                                    start_time+duration+3, duration, bandwitdh_, port, interval)
 
+        # Paralell
+        akt_measure = addIperf(akt_measure, name_prefix+"paralell_1", target1_,
+                                    start_time+2*(duration+3), duration, bandwitdh_, port, interval)
+        akt_measure = addIperf(akt_measure, name_prefix+"paralell_2", target2_,
+                                    start_time+2*(duration+3), duration, bandwitdh_, port, interval)
+
+        return akt_measure
+
+    for i in range(20, 25):
+        start_time = (i-20)*3*(duration+3)
+        paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw"+str(i), target1, target2, i, start_time)
+
+    #for item in paralell_measure.measures:
+    #    print item["measure"].script
+    #    print item["measure"].name
 
     return paralell_measure
 

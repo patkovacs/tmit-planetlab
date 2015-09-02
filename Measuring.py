@@ -435,11 +435,11 @@ class ParalellMeasure:
 
     def getData(self, sendError=True, sendErrorTrace=False):
         res = []
-        print "paralell measures: ", self.measures
+        #print "paralell measures: ", self.measures
 
         for item in self.measures:
-            print "Item: ", item
-            print "Error: ", item["measure"].error
+            #print "Item: ", item
+            #print "Error: ", item["measure"].error
             res.append(item["measure"].getData(sendError, sendErrorTrace))
 
         return res
