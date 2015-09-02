@@ -70,7 +70,7 @@ def main():
 
     while True:
         continous_measuring()
-        break
+        
 
     exit()
 
@@ -98,7 +98,7 @@ def saveOneMeasure(data):
         f.write(json.dumps(data, indent=2))
 
 def continous_measuring():
-    nodes = bestNodes()[:2]#getPlanetLabNodes(slice_name)
+    nodes = getPlanetLabNodes(slice_name)
 
     for node in nodes:
         iperf_check = check_iperf(node)
