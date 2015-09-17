@@ -17,6 +17,7 @@ import base64
 import paramiko
 import os
 from collections import Counter
+import subprocess
 
 # Constants
 slice_name          = 'budapestple_cloud'
@@ -100,7 +101,19 @@ def saveOneMeasure(data):
 def continous_measuring():
     nodes = getPlanetLabNodes(slice_name)
 
+    i = 0
+
     for node in nodes:
+        i+=1
+        i%=5
+        try:
+            log = subprocess.check_output(["Python", "SingleMeasure.py", "-n", node])
+        except Exception:
+            log = "Reaching node %s failed:\n%s", node, traceback.format_exc()
+
+        with open("Main.py.%d.log"%i,'w') as f:
+            f.write(log)
+        """
         iperf_check = check_iperf(node)
         logger.info("Iperf install check on node '%s': %s" % (node, iperf_check))
         if "installed" not in iperf_check:
@@ -112,6 +125,7 @@ def continous_measuring():
         #print "Data: ", data
         if data is not None:
             saveOneMeasure(data)
+        """
 
 
 
