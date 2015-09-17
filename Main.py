@@ -106,10 +106,11 @@ def continous_measuring():
     for node in nodes:
         i+=1
         i%=5
+        log = "empty string"
         try:
-            log = subprocess.check_output(["Python", "SingleMeasure.py", "-n", node])
+            log = subprocess.check_output(["python", "SingleMeasure.py", "-n", node])
         except Exception:
-            log = "Reaching node %s failed:\n%s", node, traceback.format_exc()
+            log = "Reaching node %s failed:\n%s" % (node, traceback.format_exc())
 
         with open("Main.py.%d.log"%i,'w') as f:
             f.write(log)
