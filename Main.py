@@ -1,7 +1,7 @@
 __author__ = 'erudhor'
 
-
 import sys
+
 sys.path.append("utils")
 from RemoteScripting import *
 from Measuring import *
@@ -18,25 +18,25 @@ import paramiko
 import os
 from collections import Counter
 import subprocess
+import logging
 
 # Constants
-slice_name          = 'budapestple_cloud'
-rsa_file            = 'ssh_needs/id_rsa'
-knownHosts_file     = 'ssh_needs/known_hosts'
+slice_name = 'budapestple_cloud'
+rsa_file = 'ssh_needs/id_rsa'
+knownHosts_file = 'ssh_needs/known_hosts'
 # target ip
 traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
 
 # ip address - time - interval - bandwidth Mbitps - port
-iperf_client_skeleton      = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
+iperf_client_skeleton = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
 
 # ip(interface), port
 iperf_server_skeleton = 'iperf -s -B %s -u -p %d'
 
-used_procs   = 10
+used_procs = 10
 used_threads = 10
 
-RUN_MEASURES = ["iperf"]#, "traceroute"]
-
+RUN_MEASURES = ["iperf"]  # , "traceroute"]
 
 target1 = "152.66.244.82"
 target2 = "152.66.127.81"
@@ -47,31 +47,34 @@ nodes = []
 measures = []
 results = []
 
-
-Connection.connectionbuilder =\
+Connection.connectionbuilder = \
     ConnectionBuilder(slice_name, rsa_file, None)
 
-import logging
-class MyFilter(logging.Filter):
-    def filter(self, record):
-        keywords = ["paramiko", "requests", "urllib3"]
-        return all(map(lambda x: x not in record.name, keywords))
-        #return "paramiko" not in record.name and "requests" not in record.name and "urllib3" not in record.name
+logger = logging.getLogger()
 
-logger = paramiko.util.logging.getLogger()#logging.getLogger()
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter(
+
+def setup_logging():
+    global logger
+
+    class MyFilter(logging.Filter):
+        def filter(self, record):
+            keywords = ["paramiko", "requests", "urllib3"]
+            return all(map(lambda x: x not in record.name, keywords))
+            # return "paramiko" not in record.name and "requests" not in record.name and "urllib3" not in record.name
+
+    logger = paramiko.util.logging.getLogger()  # logging.getLogger()
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
         '[%(asctime)s][%(name)s] %(message)s', datefmt='%M.%S')
-handler.setFormatter(formatter)
-handler.addFilter(MyFilter())
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+    handler.setFormatter(formatter)
+    handler.addFilter(MyFilter())
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
 
 def main():
-
     while True:
         continous_measuring()
-        
 
     exit()
 
@@ -88,15 +91,17 @@ def main():
     measure()
     persist()
 
+
 def saveOneMeasure(data):
     timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/%s/rawTrace_%s_%s.json'%(getDate(), timeStamp[:2], getDate(), timeStamp)
+    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
 
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
 
-    with open(filename,'w') as f:
+    with open(filename, 'w') as f:
         f.write(json.dumps(data, indent=2))
+
 
 def continous_measuring():
     nodes = getPlanetLabNodes(slice_name)
@@ -104,15 +109,15 @@ def continous_measuring():
     i = 0
 
     for node in nodes:
-        i+=1
-        i%=5
+        i += 1
+        i %= 5
         log = "empty string"
         try:
             log = subprocess.check_output(["python", "SingleMeasure.py", "-n", node])
         except Exception:
             log = "Reaching node %s failed:\n%s" % (node, traceback.format_exc())
 
-        with open("Main.py.%d.log"%i,'w') as f:
+        with open("Main.py.%d.log" % i, 'w') as f:
             f.write(log)
         """
         iperf_check = check_iperf(node)
@@ -129,12 +134,11 @@ def continous_measuring():
         """
 
 
-
 def create_paralell_iperf(node, target1, target2):
-    duration  = 5
-    interval  = 1
+    duration = 5
+    interval = 1
     bandwidth = 20
-    port      = 5200
+    port = 5200
 
     # target ip address
     trace_script = "traceroute -w 5.0 -q 3 %s"
@@ -145,7 +149,7 @@ def create_paralell_iperf(node, target1, target2):
     # ip address - port - duration - interval - bandwidth Mbitps
     start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m -i 1"
 
-    paralell_measure  = ParalellMeasure()
+    paralell_measure = ParalellMeasure()
 
     # Traceroute
     akt = Measure(node, target1)
@@ -154,46 +158,47 @@ def create_paralell_iperf(node, target1, target2):
 
     def addIperf(paralell_measure, name, target, start, duration, bandwidth, port, interval):
         akt = Measure(target, None, "mptcp")
-        akt.setScript("iperf_server_"+name, iperf_server_script % (target, port), duration+3)
-        paralell_measure.addMeasure(akt, start, True, duration+2)
+        akt.setScript("iperf_server_" + name, iperf_server_script % (target, port), duration + 3)
+        paralell_measure.addMeasure(akt, start, True, duration + 2)
 
         akt = Measure(node, target)
         script = start_client_skeleton % (target, port, duration,
                                           interval, bandwidth)
-        akt.setScript("iperf_client_"+name, script)
-        paralell_measure.addMeasure(akt, start+1,)
+        akt.setScript("iperf_client_" + name, script)
+        paralell_measure.addMeasure(akt, start + 1, )
 
         return paralell_measure
 
     def addIperf_oneBandwidth_scenario(akt_measure, name_prefix, target1_, target2_, bandwitdh_, start_time):
-
         # Iperf
 
         # Single 1
-        akt_measure = addIperf(akt_measure, name_prefix+"single_1", target1_,
-                                    start_time, duration, bandwitdh_, port, interval)
+        akt_measure = addIperf(akt_measure, name_prefix + "single_1", target1_,
+                               start_time, duration, bandwitdh_, port, interval)
 
         # Single 2
-        akt_measure = addIperf(akt_measure, name_prefix+"single_2", target2_,
-                                    start_time+duration+3, duration, bandwitdh_, port, interval)
+        akt_measure = addIperf(akt_measure, name_prefix + "single_2", target2_,
+                               start_time + duration + 3, duration, bandwitdh_, port, interval)
 
         # Paralell
-        akt_measure = addIperf(akt_measure, name_prefix+"paralell_1", target1_,
-                                    start_time+2*(duration+3), duration, bandwitdh_, port, interval)
-        akt_measure = addIperf(akt_measure, name_prefix+"paralell_2", target2_,
-                                    start_time+2*(duration+3), duration, bandwitdh_, port, interval)
+        akt_measure = addIperf(akt_measure, name_prefix + "paralell_1", target1_,
+                               start_time + 2 * (duration + 3), duration, bandwitdh_, port, interval)
+        akt_measure = addIperf(akt_measure, name_prefix + "paralell_2", target2_,
+                               start_time + 2 * (duration + 3), duration, bandwitdh_, port, interval)
 
         return akt_measure
 
     for i in range(20, 25):
-        start_time = (i-20)*3*(duration+3)
-        paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw"+str(i), target1, target2, i, start_time)
+        start_time = (i - 20) * 3 * (duration + 3)
+        paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw" + str(i), target1, target2, i,
+                                                          start_time)
 
-    #for item in paralell_measure.measures:
+    # for item in paralell_measure.measures:
     #    print item["measure"].script
     #    print item["measure"].name
 
     return paralell_measure
+
 
 def measure_iperf():
     global measures
@@ -214,22 +219,20 @@ def measure_iperf():
         logger.info("-----------------------------\nMeasurement ended:")
         logger.info(node.getData())
 
-
-
     measures = nodes
 
 
 def init():
     global measures, target_names, nodes
 
-    #nodes = getPlanetLabNodes(slice_name)
+    # nodes = getPlanetLabNodes(slice_name)
     nodes = bestNodes()
     print "number of nodes: ", len(nodes)
     print "\tfirst node: ", nodes[0]
 
     # Build up the needed Measures
     for target in target_names:
-        for node in nodes:#nodes[200:300]:
+        for node in nodes:  # nodes[200:300]:
             measures.append(TracerouteMeasure(node, target))
 
 
@@ -246,8 +249,8 @@ def persist():
 
     # escape : to . and remove seconds
     timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/rawTrace_%s_%s.json'%(getDate(), timeStamp)
-    with open(filename,'w') as f:
+    filename = 'results/rawTrace_%s_%s.json' % (getDate(), timeStamp)
+    with open(filename, 'w') as f:
         f.write(json.dumps(results, indent=2))
 
     """
@@ -270,16 +273,16 @@ def measure():
         return measure
 
     begin = time()
-    print "runMeasurements on %d threads..."%used_threads
+    print "runMeasurements on %d threads..." % used_threads
     measures = thread_map(connectAndMeasure, measures, used_threads)
-    #workers = Pool(used_threads)
-    #measures2 = workers.map(connectAndMeasure, measures)
-    print "Elapsed time: %0.0f seconds"% (time() - begin)
+    # workers = Pool(used_threads)
+    # measures2 = workers.map(connectAndMeasure, measures)
+    print "Elapsed time: %0.0f seconds" % (time() - begin)
     suceed = reduce(
         lambda acc, new:
-            acc+1 if new.error == None else acc,
+        acc + 1 if new.error == None else acc,
         measures, 0)
-    print "Succeed measures: %d"%suceed
+    print "Succeed measures: %d" % suceed
 
 
 def bestNodes():
@@ -322,13 +325,13 @@ def install_iperf(con, ip):
 
 
 def check_iperf(node):
-    log = logger.getChild(str(node).replace(".", "_")+".checkIperf").info
-    #cmd_install = "sudo yum install -y iperf"
+    log = logger.getChild(str(node).replace(".", "_") + ".checkIperf").info
+    # cmd_install = "sudo yum install -y iperf"
     cmd_test = "iperf -v"
     not_installed_test = "iperf: command not found"
     installed_test = "iperf version"
 
-    log("Check node: "+ node)
+    log("Check node: " + node)
 
     if not ping(node):
         log("offline")
@@ -338,56 +341,56 @@ def check_iperf(node):
         con = Connection(node)
         con.connect()
         if con.errorTrace is not None:
-            log("Error at connection: "+con.errorTrace)
+            log("Error at connection: " + con.errorTrace)
     except Exception:
-        log("Error at connection: "+traceback.format_exc())
+        log("Error at connection: " + traceback.format_exc())
         return "connection fail"
 
     try:
         err, outp = con.runCommand(cmd_test)
     except Exception:
-        log("Error at remote execution: "+ traceback.format_exc())
+        log("Error at remote execution: " + traceback.format_exc())
         return "runtime error"
 
     if len(err) > 0:
-        log("Runtime error at remote execution: "+err)
+        log("Runtime error at remote execution: " + err)
         return "runtime error"
 
     if installed_test in outp:
         version = outp.split(" ")[2]
-        log("installed version: "+version)
+        log("installed version: " + version)
         return "installed - version: %s" % version
 
     if not_installed_test not in outp:
-        log("Installation not possible: "+outp)
+        log("Installation not possible: " + outp)
         return "installation abbandoned: " + outp
 
     log("Installation started")
     try:
         install_iperf(con, node)
     except Exception:
-        log("Installation failed: "+traceback.format_exc())
-        return "install failed: "+\
+        log("Installation failed: " + traceback.format_exc())
+        return "install failed: " + \
                traceback.format_exc().splitlines()[-1]
 
     try:
         err, outp = con.runCommand(cmd_test)
     except Exception:
-        log("Installation failed: "+traceback.format_exc())
-        return "install failed: "+\
+        log("Installation failed: " + traceback.format_exc())
+        return "install failed: " + \
                traceback.format_exc().splitlines()[-1]
 
     if len(err) > 0:
-        log("Installation failed: "+err)
-        return "install failed: "+ err.splitlines()[-2:-1]
+        log("Installation failed: " + err)
+        return "install failed: " + err.splitlines()[-2:-1]
 
     if installed_test in outp:
         version = outp.split(" ")[2]
-        log("Installation suceed, new version: "+version)
+        log("Installation suceed, new version: " + version)
         return "freshly installed - version: %s" % version
 
-    log("Installation failed: "+outp)
-    return "install failed: "+outp
+    log("Installation failed: " + outp)
+    return "install failed: " + outp
 
 
 def inception(nodes):
@@ -432,13 +435,13 @@ def scan_iperf_installations():
     print "get node list"
     nodes = getPlanetLabNodes(slice_name)
 
-    print "start scanning on %d threads" % (used_threads*used_procs)
+    print "start scanning on %d threads" % (used_threads * used_procs)
     # results = thread_map(install_iperf, nodes, used_threads)
     # results = proc_map(install_iperf, nodes, used_threads)
 
-    node_lists   = splitList(nodes, int(len(nodes)/used_procs))
+    node_lists = splitList(nodes, int(len(nodes) / used_procs))
     result_lists = proc_map(inception, node_lists, used_procs)
-    results      = glueList(result_lists)
+    results = glueList(result_lists)
 
     print "--------------------"
     c = Counter(results)
@@ -467,13 +470,13 @@ def scan_os_types():
 
     print "create statistics"
     online = reduce(lambda acc, new:
-                        acc+1 if new["online"] else acc,
+                    acc + 1 if new["online"] else acc,
                     nodes, 0)
     print "Online nodes: ", online
 
     error = reduce(lambda acc, new:
-                    acc+1 if new.has_key("error") else acc,
-                nodes, 0)
+                   acc + 1 if new.has_key("error") else acc,
+                   nodes, 0)
     print "Occured errors: ", error
 
 
@@ -500,10 +503,10 @@ def get_scan_statistic():
         for type, count in outp.most_common(len(outp)):
             print "Output count:%d\n\t%s" % (count, type)
 
-        #print "==============================="
-        #print errors
-        #print "==============================="
-        #print outp
+            # print "==============================="
+            # print errors
+            # print "==============================="
+            # print outp
 
 
 def splitList(list, splitLen):
@@ -513,7 +516,7 @@ def splitList(list, splitLen):
     split = []
     for node in list:
         split.append(node)
-        if (j) % (splitLen) == splitLen-1:
+        if (j) % (splitLen) == splitLen - 1:
             splitted_list.append(split)
             split = []
             i += 1
