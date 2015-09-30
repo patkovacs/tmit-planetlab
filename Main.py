@@ -34,7 +34,7 @@ iperf_client_skeleton = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
 iperf_server_skeleton = 'iperf -s -B %s -u -p %d'
 
 used_procs = 10
-used_threads = 10
+used_threads = 200
 
 RUN_MEASURES = ["iperf"]  # , "traceroute"]
 
@@ -73,23 +73,8 @@ def setup_logging():
 
 
 def main():
-    while True:
-        continous_measuring()
-
-    exit()
-
-    logger.info("Program started")
-
-    measure_iperf()
-
-    logger.info("Saving results")
-    persist()
-    logger.info("Program ened")
-    exit()
-
-    init()
-    measure()
-    persist()
+   scan_os_types() 
+   get_scan_statistic()
 
 
 def saveOneMeasure(data):
@@ -407,7 +392,8 @@ def testOs(node_ip):
         return node
 
     try:
-        con = Connection.connectionbuilder.getConnection(node["ip"])
+        con = Connection(node["ip"])
+        con.connect()
     except Exception:
         error_lines = traceback.format_exc().splitlines()
         node["error"] = error_lines[-1]
