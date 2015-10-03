@@ -18,9 +18,6 @@ from Geoloc_Lookup import get_geoloc
 import threading
 
 
-traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
-
-
 #=================================================
 # Classes
 
@@ -65,13 +62,13 @@ class Measure:
         self.timeStamp = time.getTime()
         self.online = ping(self.fromIP)
         if self.online:
-            if not validIP(self.fromIP):
+            if not id_valid_ip(self.fromIP):
                 self.fromDNS = self.fromIP
                 self.fromIP = getIP_fromDNS(self.fromIP)
                 if self.fromIP == None:
                     self.error = "not valid ip address or DNS name"
                     return False
-            if not validIP(self.toIP):
+            if not id_valid_ip(self.toIP):
                 self.toDNS = self.toIP
                 self.toIP = getIP_fromDNS(self.toIP)
                 if self.fromIP == None:
@@ -447,6 +444,8 @@ class ParalellMeasure:
 
 class TracerouteMeasure(Measure):
 
+    traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
+
     def __init__(self, from_ip, to_ip):
         Measure.__init__(self, from_ip, to_ip)
         self.traceroute = None
@@ -484,7 +483,7 @@ class TracerouteMeasure(Measure):
         #self.runScript("traceroute", traceroute_skeleton)
 
         try:
-            command = traceroute_skeleton%self.toIP
+            command = self.traceroute_skeleton%self.toIP
             if sudo:
                 command = "sudo "+command
 
