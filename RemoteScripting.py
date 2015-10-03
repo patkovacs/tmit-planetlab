@@ -2,7 +2,6 @@ __author__ = 'Rudolf Horvath'
 __date__ = "2015.06.15"
 
 # Imports
-from Measuring import *
 import paramiko
 import xmlrpclib
 import platform
@@ -180,7 +179,7 @@ class ConnectionBuilder:
         info["error"] = None
         info["errorTrace"] = None
 
-        if not id_valid_ip(target):
+        if not is_valid_ip(target):
             info["ip"] = getIP_fromDNS(target)
             if info["ip"] == None:
                 info["online"] = False
@@ -280,7 +279,7 @@ def getIP_fromDNS(hostname):
     return ret
 
 
-def id_valid_ip(ip):
+def is_valid_ip(ip):
     numOfSegments = 0
     for segment in ip.split("."):
         numOfSegments += 1
@@ -342,7 +341,7 @@ def check_iperf(node):
         return "connection fail"
 
     try:
-        err, outp = con.runCommand(cmd_test)
+        outp, err = con.runCommand(cmd_test)
     except Exception:
         log("Error at remote execution: " + traceback.format_exc())
         return "runtime error"
@@ -369,7 +368,7 @@ def check_iperf(node):
                traceback.format_exc().splitlines()[-1]
 
     try:
-        err, outp = con.runCommand(cmd_test)
+        outp, err = con.runCommand(cmd_test)
     except Exception:
         log("Installation failed: " + traceback.format_exc())
         return "install failed: " + \

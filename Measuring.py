@@ -3,7 +3,7 @@ __date__ = "2015.06.15"
 
 import sys
 sys.path.append("utils")
-from RemoteScripting import *
+from RemoteScripting import Connection
 import time
 from datetime import date, datetime
 import paramiko
@@ -15,6 +15,7 @@ import random
 import logging
 from ASN_Lookup import get_asn
 from Geoloc_Lookup import get_geoloc
+from threading import Thread
 import threading
 
 
