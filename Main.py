@@ -10,6 +10,7 @@ import paramiko
 import os
 import subprocess
 import logging
+import traceback
 
 # Constants
 rsa_file = 'ssh_needs/id_rsa'
@@ -37,44 +38,62 @@ def main():
 
 
 def check_running_process(con, command):
-    stdout,stderr = con.runCommand("pstree -g | grep %s"%command)
+    if con.ssh is None:
+        succeed = con.connect(10)
+        if not succeed:
+            print "Connection failed: ", con.error
+            print con.errorTrace
+            return
+        print "Connection succesfull"
+    print "Checking running"
+
+    stdout, stderr = con.runCommand("pstree -g | grep %s"%command)
     if len(stderr) > 0:
-        print "Error at checking remote running processes: ", stderr
+        print "Error at checking remote running process: ", stderr
         return
-    print "Running %s processen on remote server:\n", stdout
+    print "Running %s process on remote server:\n", stdout
     return command in stdout
 
 def test_ssh_remote_process_closing(ip, username, command, timeout=10):
     con = Connection(ip, username)
-    succeed = con.connect()
+    succeed = con.connect(10)
     if not succeed:
         print "Connection failed: ", con.error
         print con.errorTrace
         return
     print "Connection succesfull"
     print "Starting server"
-    stdout, stderr = con.runCommand(command)
+
+    def stop():
+        print "End remote process."
+        con.disconnect()
+
+    stopping = threading.Timer(timeout, stop)
+    stopping.start()
+
+    stderr = stdout = []
+    try:
+        stdout, stderr = con.runCommand(command, timeout+1)
+    except socket.timeout:
+        print "Remote command timed out."
 
     if con.error is not None:
         print "Running remote command failed: ", con.error
         print con.errorTrace
+        return
     if len(stderr) > 0:
         print "Error at remote process:\n", stderr
-        
-    time.sleep(timeout)
-    print "End remote process."
-    con.disconnect()
     
     print "Output of remote process: \n", stdout
     time.sleep(3)
     
     print "Check if remote process was killed."
-    runs = check_running_process(con, command.strip(" ")[0])
+    runs = check_running_process(con, command.split(" ")[0])
 
     if runs:
-        print "Process runs on remote address: Sucess!"
+        print "Process runs on remote address: Fail!"
     else:
-        print "Process ended on remote address: Fail!"
+        print "Process ended on remote address: Success!"
 
 
 
