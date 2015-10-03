@@ -4,6 +4,7 @@ import argparse
 
 DEFAULT_NODE = "128.208.4.198"
 
+
 def arg_parse():
     args = []
     sys.argvargs = []
@@ -19,7 +20,7 @@ def arg_parse():
     return parser.parse_args()
 
 
-def create_paralell_iperf_test(node, target1, target2):
+def create_paralell_iperf(node, target1, target2):
     duration  = 5
     interval  = 1
     bandwidth = 20
@@ -78,11 +79,13 @@ def create_paralell_iperf_test(node, target1, target2):
 
         return akt_measure
 
-    #for i in range(20, 25):
-    #    start_time = (i-20)*3*(duration+3)
-    #    paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw"+str(i), target1, target2, i, start_time)
-    paralell_measure = addIperf(paralell_measure, "test", target1,
-                                    5, duration, bandwidth, port, interval)
+    for i in range(20, 25):
+        start_time = (i-20)*3*(duration+3)
+        paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw"+str(i),
+                                                          target1, target2, i, start_time)
+    #paralell_measure = addIperf(paralell_measure, "test", target1,
+    #                                5, duration, bandwidth, port, interval)
+
     #for item in paralell_measure.measures:
     #    print item["measure"].script
     #    print item["measure"].name
@@ -91,6 +94,7 @@ def create_paralell_iperf_test(node, target1, target2):
 
 
 def main():
+    setup_logging()
     args = arg_parse()
     node = args.n
 
