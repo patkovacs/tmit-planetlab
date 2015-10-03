@@ -126,10 +126,13 @@ class Connection:
         self.thread.start()
 
     def runCommand(self, command, timeout=5):
-        if self.ssh == None:
+        if self.ssh is None:
             raise RuntimeWarning("Connection not alive!")
 
-        stdin, stdout, stderr = self.ssh.exec_command(command, timeout=timeout)
+        stdin, stdout, stderr = self.ssh.exec_command(command,
+                                                      timeout=timeout,
+                                                      get_pty=True)
+
         output = stdout.read()
         errors = stderr.read()
         return output, errors
