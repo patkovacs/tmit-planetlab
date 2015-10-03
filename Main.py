@@ -36,8 +36,13 @@ def main():
     test_ssh_remote_process_closing(target1, target_username, "iperf -s")
 
 
-def check_running_process(ip, username, command):
-    pass
+def check_running_process(con, command):
+    stdout,stderr = con.runCommand("pstree -g | grep %s"%command)
+    if len(stderr) > 0:
+        print "Error at checking remote running processes: ", stderr
+        return
+    print "Running %s processen on remote server:\n", stdout
+    return command in stdout
 
 def test_ssh_remote_process_closing(ip, username, command, timeout=10):
     con = Connection(ip, username)
@@ -48,18 +53,23 @@ def test_ssh_remote_process_closing(ip, username, command, timeout=10):
         return
     print "Connection succesfull"
     print "Starting server"
-    con.runCommand(command)
+    stdout, stderr = con.runCommand(command)
 
     if con.error is not None:
         print "Running remote command failed: ", con.error
         print con.errorTrace
-
+    if len(stderr) > 0:
+        print "Error at remote process:\n", stderr
+        
     time.sleep(timeout)
-
+    print "End remote process."
     con.disconnect()
+    
+    print "Output of remote process: \n", stdout
     time.sleep(3)
-
-    runs = check_running_process(ip, username, command.strip(" ")[0])
+    
+    print "Check if remote process was killed."
+    runs = check_running_process(con, command.strip(" ")[0])
 
     if runs:
         print "Process runs on remote address: Sucess!"
