@@ -17,7 +17,7 @@ rsa_file = 'ssh_needs/id_rsa'
 knownHosts_file = 'ssh_needs/known_hosts'
 
 used_procs = 100
-used_threads = 200
+used_threads = 300
 
 RUN_MEASURES = ["iperf"]  # , "traceroute"]
 
@@ -29,11 +29,14 @@ target_username = "mptcp"
 Connection.connectionbuilder = \
     ConnectionBuilder(slice_name, rsa_file, None)
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
-
 def main():
-    continous_measuring()
+    pass
+    #continous_measuring()
+    #scan_os_types(used_threads)
+    #get_scan_statistic("results/scan_getty.json")
 
 
 def setup_logging():
