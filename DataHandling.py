@@ -6,6 +6,7 @@ import os
 import time
 import datetime
 import logging
+import json
 
 
 class SQLiteDB:
@@ -94,6 +95,15 @@ def _get_time_dir_touple(timestamp):
                                 hour, minute)
     return date_str, hour_str, file_str
 
+
+def parse_traceroute(outp):
+    pass
+
+
+def parse_iperf(outp):
+    pass
+
+
 def read_results(results_dir="results", from_date=None, until_date=None):
     log = logging.getLogger("read_results").info
 
@@ -124,9 +134,20 @@ def read_results(results_dir="results", from_date=None, until_date=None):
             continue
         hours = os.listdir(results_dir+"/"+day)
         for hour in hours:
-            files.extend(os.listdir("%s/%s/%s"%(results_dir, day, hour)))
+            dir = "%s/%s/%s"%(results_dir, day, hour)
+            elements = os.listdir(dir)
+            files.extend(map(lambda x: dir+"/"+x, elements))
 
-    print files
+    for to_read in files:
+        with open(to_read, 'r') as f:
+            akt = json.loads(f.read())
+        print json.dumps(akt, indent=2)
+        for measure in akt:
+            if not measure.has_key("name"):
+                continue
+            if measure["traceroute"]:
+                parse_traceroute(akt.)
+
 
 def get_datetime(year, month, day, hour, minute, second):
     date = datetime.date(year, month, day)
