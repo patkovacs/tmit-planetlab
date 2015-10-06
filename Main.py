@@ -3,18 +3,19 @@ __author__ = 'Rudolf Horvath'
 import sys
 
 sys.path.append("utils")
-from RemoteScripting import *
-from Measuring import *
+import Measuring as measure
 import json
 import paramiko
 import os
 import subprocess
 import logging
 import traceback
+import RemoteScripting as remote
 
 # Constants
 rsa_file = 'ssh_needs/id_rsa'
 knownHosts_file = 'ssh_needs/known_hosts'
+slice_name = remote.slice_name
 
 used_procs = 100
 used_threads = 300
@@ -26,8 +27,8 @@ target2 = "152.66.127.81"
 target_names = [target1, target2]
 target_username = "mptcp"
 
-Connection.connectionbuilder = \
-    ConnectionBuilder(slice_name, rsa_file, None)
+remote.Connection.connectionbuilder = \
+    remote.ConnectionBuilder(slice_name, rsa_file, None)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -35,8 +36,8 @@ logger = logging.getLogger()
 def main():
     pass
     #continous_measuring()
-    #scan_os_types(used_threads)
-    #get_scan_statistic("results/scan_getty.json")
+    #remote.scan_os_types(used_threads)
+    remote.get_scan_statistic()
 
 
 def setup_logging():
@@ -59,8 +60,8 @@ def setup_logging():
 
 
 def saveOneMeasure(data):
-    timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
+    timeStamp = measure.getTime().replace(":", ".")[0:-3]
+    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (measure.getDate(), timeStamp[:2], measure.getDate(), timeStamp)
 
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
@@ -83,7 +84,7 @@ def continous_measuring():
             f.write(log)
 
     while True:
-        nodes = getPlanetLabNodes(slice_name)
+        nodes = remote.getPlanetLabNodes(slice_name)
         i = 0
         for node in nodes:
             i = (i+1)%5

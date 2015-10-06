@@ -3,7 +3,7 @@ __date__ = "2015.06.15"
 
 import sys
 sys.path.append("utils")
-from RemoteScripting import Connection
+from RemoteScripting import *
 import time
 from datetime import date, datetime
 import paramiko

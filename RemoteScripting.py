@@ -15,6 +15,7 @@ import simplejson as json
 from collections import Counter
 from threadedMap import thread_map, proc_map
 import os
+import Measuring as measure
 
 
 # Constants
@@ -436,7 +437,7 @@ def scan_iperf_installations(slice_name, used_threads=200):
     c = Counter(results)
     print "Results:"
 
-    stats = {"date": getDate(), "time": getTime()}
+    stats = {"date": measure.getDate(), "time": measure.getTime()}
     for item in c.most_common():
         stats[item[0]] = item[1]
 
@@ -468,7 +469,9 @@ def scan_os_types(used_threads=200):
     log("Online nodes: %d", online)
 
     error = reduce(lambda acc, new:
-                   acc + 1 if new.has_key("error") else acc,
+                   acc + 1 if new.has_key("error")
+                              and new["error"] != "offline"
+                   else acc,
                    nodes, 0)
     log("Occured errors: %d", error)
 
@@ -479,16 +482,25 @@ def get_scan_statistic(filename="results/scan.json"):
         errors = Counter()
         outp = Counter()
         offline = 0
+        online = 0
+        error = 0
+        succeed = 0
         for node in nodes:
             if not node["online"]:
                 offline += 1
                 continue
-            if node.has_key("error"):
+            online += 1
+            if node.has_key("error") and node["error"] != "offline":
                 errors[node["error"]] += 1
+                error += 1
             else:
                 outp[node["outp"]] += 1
+                succeed += 1
 
-        print "Offline count: ", offline, "\n"
+        print "Online count: ", online
+        print "Offline count: ", offline
+        print "Error count: ", error
+        print "Succeed count: ", succeed, "\n"
 
         for type, count in errors.most_common(len(errors)):
             print "Error count:%d\n\t%s" % (count, type)
