@@ -7,6 +7,8 @@ import time
 import datetime
 import logging
 import json
+import re
+import iperf_parse
 
 
 class SQLiteDB:
@@ -96,12 +98,22 @@ def _get_time_dir_touple(timestamp):
     return date_str, hour_str, file_str
 
 
-def parse_traceroute(outp):
-    pass
+def parse_traceroute(measure):
+    outp = measure["result"]
+    #print outp
+
+i=0
+def parse_iperf(measure):
+    global i
+    if i < 1:
+        i+=1
+    else:
+        exit()
+    outp = measure["result"]
+    res = iperf_parse.parse(outp)
+    print json.dumps(res, indent=2)
 
 
-def parse_iperf(outp):
-    pass
 
 
 def read_results(results_dir="results", from_date=None, until_date=None):
@@ -138,15 +150,18 @@ def read_results(results_dir="results", from_date=None, until_date=None):
             elements = os.listdir(dir)
             files.extend(map(lambda x: dir+"/"+x, elements))
 
+    first = True
     for to_read in files:
+        #print "reading file: ", to_read
         with open(to_read, 'r') as f:
             akt = json.loads(f.read())
-        print json.dumps(akt, indent=2)
         for measure in akt:
-            if not measure.has_key("name"):
+            if measure is None or "name" not in measure.keys():
                 continue
-            if measure["traceroute"]:
-                parse_traceroute(akt.)
+            if measure["name"] == "traceroute":
+                parse_traceroute(measure)
+            elif "iperf" in measure["name"]:
+                parse_iperf(measure)
 
 
 def get_datetime(year, month, day, hour, minute, second):
