@@ -7,7 +7,6 @@ import time
 import datetime
 import logging
 import json
-import re
 import iperf_parse
 
 
@@ -105,15 +104,9 @@ def parse_traceroute(measure):
 i=0
 def parse_iperf(measure):
     global i
-    if i < 1:
-        i+=1
-    else:
-        exit()
+    i+=1
     outp = measure["result"]
-    res = iperf_parse.parse(outp)
-    print json.dumps(res, indent=2)
-
-
+    return iperf_parse.parse(outp)
 
 
 def read_results(results_dir="results", from_date=None, until_date=None):
@@ -177,11 +170,12 @@ def get_epoch(date_time):
 
 
 def main():
-    from_date = datetime.date(2015, 9, 5)
-    until_date = datetime.date(2015, 10, 2)
+    from_date = datetime.date(2014, 9, 5)
+    until_date = datetime.date(2016, 10, 2)
 
     read_results("results", from_date, until_date)
 
+    print "readed iperf measurements: %d" % i
 
 if __name__ == "__main__":
     main()
