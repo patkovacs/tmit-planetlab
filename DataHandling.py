@@ -3,11 +3,28 @@ __date__ = '2015.06.15'
 
 import sqlite3 as sql
 import os
-import time
-import datetime
 import logging
 import json
 import iperf_parse
+import datetime
+import trparse
+from pymongo import MongoClient
+
+
+def main():
+    from_date = datetime.date(2014, 9, 5)
+    until_date = datetime.date(2016, 10, 2)
+
+    results = read_results("results", from_date, until_date)
+    mongo_client = MongoClient("localhost", 27017)
+    db = mongo_client.client["dev"]
+    collection = db["raw"]
+
+    for doc in results:
+        collection.insert_one(doc)
+
+    print "readed iperf measurements: %d" % i
+    print "readed tracerute measurements: %d" % j
 
 
 class SQLiteDB:
@@ -80,37 +97,114 @@ class SQLiteDB:
 
 class MongoDB:
 
-    def __init__(self):
-        pass
+    def __init__(self, ip, port, database, collection=None):
+        self.client = MongoClient(ip, port)
+        self.db = self.client[database]
+        self.collection = self.db[collection]
 
-def _get_time_dir_touple(timestamp):
-    date = datetime.date.fromtimestamp(timestamp)
-    hour = int((timestamp/3600)%24)
-    minute = int((timestamp/60)%60)
+    def open_collection(self, collection):
+        self.collection = self.db[collection]
 
-    date_str = "{:d}.{:0>2d}.{:0>2d}".format(date.year,date.month,
-                                             date.day)
-    hour_str = "{:0>2d}".format(hour)
-    file_mask = "{:d}.{:0>2d}.{:0>2d}_{:0>2d}.{:0>2d}"
-    file_str = file_mask.format(date.year,date.month,date.day,
-                                hour, minute)
-    return date_str, hour_str, file_str
+    def push(self, document):
+        if self.collection is not None:
+            self.collection.insert_one(document)
 
 
-def parse_traceroute(measure):
+j = 0
+def parse_traceroute(measure, from_ip):
+    global j
+    j += 1
     outp = measure["result"]
-    #print outp
+    time = datetime.datetime.fromtimestamp(measure["time"])
 
-i=0
+    parse = trparse.loads(outp, from_ip)
+
+    prev_ip = from_ip
+    end_ip = parse.dest_ip
+    prev_rtt = 0
+    index = 0
+    links = []
+
+    for hop in parse.hops:
+        avgRTT = 0
+        probLen = 0
+        mainProbe = None
+        for probe in hop.probes:
+            if probe == "*":
+                continue
+            if mainProbe == None:
+                mainProbe = probe.ip
+            if mainProbe == probe.ip and probe.rtt != None:
+                avgRTT += probe.rtt
+                probLen += 1
+            #probe.ip
+            #probe.name
+            #probe.rtt
+        if mainProbe == None:
+            continue
+        avgRTT /= probLen
+        aktIP = mainProbe
+        links.append({
+            "from": prev_ip,
+            "to": aktIP,
+            "delay": avgRTT-prev_rtt
+        })
+        prev_ip = aktIP
+        index += 1
+        prev_rtt = avgRTT
+
+    res = {
+        "from": from_ip,
+        "to": end_ip,
+        "datetime": time,
+        "links": links
+    }
+
+    #print json.dumps(res, indent=2, default=json_util.default)
+
+    # for ip in ip_list:
+    #     print "ip: ", ip
+    #     geoloc = get_geoloc(ip)
+    #     asn = get_asn(ip)
+
+    return res
+
+
+i = 0
 def parse_iperf(measure):
     global i
-    i+=1
+    i += 1
     outp = measure["result"]
     return iperf_parse.parse(outp)
 
 
+def read_measure(measure_session):
+    traceroute_results = []
+    iperf_results = []
+    results = []
+    for measure in measure_session:
+        if measure is None or "name" not in measure.keys():
+            continue
+        if "traceroute" in measure["name"]:
+            traceroute_results.append({
+                "result": parse_traceroute(measure, measure["from"]),
+                "name": measure["name"]
+            })
+        elif "iperf" in measure["name"]:
+            iperf_results.append({
+                "result":parse_iperf(measure),
+                "name":measure["name"]
+            })
+
+    for traceroute in traceroute_results:
+        results.append(traceroute["result"])
+
+    return results
+
+
 def read_results(results_dir="results", from_date=None, until_date=None):
     log = logging.getLogger("read_results").info
+    results = []
 
     if not os.path.exists(results_dir) or not os.path.isdir(results_dir):
         log("path does not exists")
@@ -143,18 +237,11 @@ def read_results(results_dir="results", from_date=None, until_date=None):
             elements = os.listdir(dir)
             files.extend(map(lambda x: dir+"/"+x, elements))
 
-    first = True
     for to_read in files:
-        #print "reading file: ", to_read
         with open(to_read, 'r') as f:
             akt = json.loads(f.read())
-        for measure in akt:
-            if measure is None or "name" not in measure.keys():
-                continue
-            if measure["name"] == "traceroute":
-                parse_traceroute(measure)
-            elif "iperf" in measure["name"]:
-                parse_iperf(measure)
+            results.extend(read_measure(akt))
+    return results
 
 
 def get_datetime(year, month, day, hour, minute, second):
@@ -169,13 +256,19 @@ def get_epoch(date_time):
     return int((date_time - epoch).total_seconds())
 
 
-def main():
-    from_date = datetime.date(2014, 9, 5)
-    until_date = datetime.date(2016, 10, 2)
+def _get_time_dir_touple(timestamp):
+    date = datetime.date.fromtimestamp(timestamp)
+    hour = int((timestamp/3600)%24)
+    minute = int((timestamp/60)%60)
 
-    read_results("results", from_date, until_date)
+    date_str = "{:d}.{:0>2d}.{:0>2d}".format(date.year,date.month,
+                                             date.day)
+    hour_str = "{:0>2d}".format(hour)
+    file_mask = "{:d}.{:0>2d}.{:0>2d}_{:0>2d}.{:0>2d}"
+    file_str = file_mask.format(date.year,date.month,date.day,
+                                hour, minute)
+    return date_str, hour_str, file_str
 
-    print "readed iperf measurements: %d" % i
 
 if __name__ == "__main__":
     main()
