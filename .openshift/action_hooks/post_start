@@ -1,0 +1,32 @@
+#!/usr/bin/python
+import requests
+import subprocess
+import traceback
+
+
+to = "rudolf.official@gmail.com"
+from_mail =  "python-limiere@sendgrid.net"
+
+sub = "Openshift cartridge started"
+
+try:
+    msg = subprocess.check_output("ps aux")
+except subprocess.CalledProcessError as e:
+    msg = e.output
+else:
+    msg = traceback.format_exc()
+
+
+
+path = "https://api.sendgrid.com/api/mail.send.json"
+token = "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"
+
+header = {"Authorization": "Bearer "+token}
+req = {"to": from_mail,
+        "subject": sub,
+        "text": msg,
+        "from": from_mail
+        }
+
+requests.post(path, req, headers=header)
+

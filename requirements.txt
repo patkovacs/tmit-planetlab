@@ -1,0 +1,4 @@
+paramiko
+simplejson
+requests
+dnspython
