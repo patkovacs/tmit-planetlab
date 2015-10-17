@@ -9,9 +9,37 @@ import iperf_parse
 import datetime
 import trparse
 from pymongo import MongoClient
-
+from Measuring import getDate, getTime
+from RemoteScripting import getBestNodes
+import SingleMeasure
 
 def main():
+    nodes = getBestNodes()
+
+    #for node in nodes:
+    #    SingleMeasure.one_measure(node)
+
+    SingleMeasure.one_measure(nodes[0])
+
+
+def save_one_measure(data, db=False):
+    timeStamp = getTime().replace(":", ".")[0:-3]
+    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
+
+    if db:
+        mongo_client = MongoClient("localhost", 27017)
+        db = mongo_client.client["dev"]
+        collection = db["raw"]
+        collection.insert_one(data)
+
+    if not os.path.exists(os.path.dirname(filename)):
+        os.makedirs(os.path.dirname(filename))
+
+    with open(filename, 'w') as f:
+        f.write(json.dumps(data, indent=2))
+
+
+def push_results_to_db():
     from_date = datetime.date(2014, 9, 5)
     until_date = datetime.date(2016, 10, 2)
 
@@ -20,83 +48,18 @@ def main():
     db = mongo_client.client["dev"]
     collection = db["raw"]
 
+    if results is None:
+        print "Error at result reading"
+        return
+
     for doc in results:
         collection.insert_one(doc)
 
-    print "readed iperf measurements: %d" % i
-    print "readed tracerute measurements: %d" % j
-
-
-class SQLiteDB:
-    """
-    Fuggvenyek:
-     - TracerouteMeasure-bol allo lista kezelese:
-      - Json file keszitese
-      - Beemelese SQLite adatbazisba
-      - ellistak beemelese SQLite adatbazisba
-      - IP cimek beolvasasa
-      - DNS nevek beolvasasa
-     - Ezen funkciok akar adatbazisbol beolvasva (nyers traceroute-bol)
-     - ip cim - domain nev parok tarolasa
-     - ip cim id parositas
-     - domain nev - id parositas
-    """
-
-    def __init__(self, file_name):
-        self.con = sql.connect(file_name)
-        self.c   = self.con.cursor()
-
-    def close(self):
-        self.con.commit()
-        self.c.close()
-        self.con.close()
-
-    def fetch(self, sql_cmd, params):
-        self.c.execute(sql_cmd, params)
-        return self.c.fetchall()
-
-    def fetchOne(self, sql_cmd, params):
-        self.c.execute(sql_cmd, params)
-        return self.c.fetchone()
-
-    def pushLink(self, index, fromID, toID, rtt, weight, traceID):
-        self.c.execute('INSERT INTO "edge" VALUES(NULL, ?, ?, ?, ?, ?, ?)', (fromID, toID, rtt, weight, traceID, index, ))
-        #con.commit()
-
-    def get_IP_ID_db(self, ip):
-        self.c.execute('SELECT "id" FROM "node" WHERE "ip"=?;', (ip, ))
-        res = self.c.fetchone()
-        if res == None:
-            return None
-        else:
-            return res[0]
-
-    def getIP_from_ID(self, id):
-        self.c.execute('SELECT "ip" FROM "node" WHERE "id"=?;', (id, ))
-        res = self.c.fetchone()
-        if res == None:
-            return None
-        else:
-            return res[0]
-
-    def getRes(self, date):
-        self.c.execute("""SELECT "start", "end", "res", "id" FROM "rawTrace"'+
-                  'WHERE "online"=1 and "error"=0 and "date" LIKE ? ;""", ("%s"%(date), ))
-        return self.c.fetchall()
-
-    def pushIP(self, putIP):
-        if putIP == None:
-            return None
-        id = self.get_IP_ID_db(putIP)
-        if(id == None):
-            self.c.execute('INSERT INTO "node" VALUES(NULL, ?)', (putIP, ))
-            self.con.commit()
-            id = self.get_IP_ID_db(putIP)
-        return id
+        # print "readed iperf measurements: %d" % i
+        # print "readed tracerute measurements: %d" % j
 
 
 class MongoDB:
-
     def __init__(self, ip, port, database, collection=None):
         self.client = MongoClient(ip, port)
         self.db = self.client[database]
@@ -110,10 +73,7 @@ class MongoDB:
             self.collection.insert_one(document)
 
 
-j = 0
 def parse_traceroute(measure, from_ip):
-    global j
-    j += 1
     outp = measure["result"]
     time = datetime.datetime.fromtimestamp(measure["time"])
 
@@ -137,9 +97,9 @@ def parse_traceroute(measure, from_ip):
             if mainProbe == probe.ip and probe.rtt != None:
                 avgRTT += probe.rtt
                 probLen += 1
-            #probe.ip
-            #probe.name
-            #probe.rtt
+                # probe.ip
+                # probe.name
+                # probe.rtt
         if mainProbe == None:
             continue
         avgRTT /= probLen
@@ -147,7 +107,7 @@ def parse_traceroute(measure, from_ip):
         links.append({
             "from": prev_ip,
             "to": aktIP,
-            "delay": avgRTT-prev_rtt
+            "delay": avgRTT - prev_rtt
         })
         prev_ip = aktIP
         index += 1
@@ -160,7 +120,7 @@ def parse_traceroute(measure, from_ip):
         "links": links
     }
 
-    #print json.dumps(res, indent=2, default=json_util.default)
+    # print json.dumps(res, indent=2, default=json_util.default)
 
     # for ip in ip_list:
     #     print "ip: ", ip
@@ -170,10 +130,7 @@ def parse_traceroute(measure, from_ip):
     return res
 
 
-i = 0
 def parse_iperf(measure):
-    global i
-    i += 1
     outp = measure["result"]
     return iperf_parse.parse(outp)
 
@@ -192,8 +149,8 @@ def read_measure(measure_session):
             })
         elif "iperf" in measure["name"]:
             iperf_results.append({
-                "result":parse_iperf(measure),
-                "name":measure["name"]
+                "result": parse_iperf(measure),
+                "name": measure["name"]
             })
 
     for traceroute in traceroute_results:
@@ -231,11 +188,11 @@ def read_results(results_dir="results", from_date=None, until_date=None):
         if day < from_str or day > until_str:
             log("Not in timespan: %s", day)
             continue
-        hours = os.listdir(results_dir+"/"+day)
+        hours = os.listdir(results_dir + "/" + day)
         for hour in hours:
-            dir = "%s/%s/%s"%(results_dir, day, hour)
+            dir = "%s/%s/%s" % (results_dir, day, hour)
             elements = os.listdir(dir)
-            files.extend(map(lambda x: dir+"/"+x, elements))
+            files.extend(map(lambda x: dir + "/" + x, elements))
 
     for to_read in files:
         with open(to_read, 'r') as f:
@@ -258,16 +215,85 @@ def get_epoch(date_time):
 
 def _get_time_dir_touple(timestamp):
     date = datetime.date.fromtimestamp(timestamp)
-    hour = int((timestamp/3600)%24)
-    minute = int((timestamp/60)%60)
+    hour = int((timestamp / 3600) % 24)
+    minute = int((timestamp / 60) % 60)
 
-    date_str = "{:d}.{:0>2d}.{:0>2d}".format(date.year,date.month,
+    date_str = "{:d}.{:0>2d}.{:0>2d}".format(date.year, date.month,
                                              date.day)
     hour_str = "{:0>2d}".format(hour)
     file_mask = "{:d}.{:0>2d}.{:0>2d}_{:0>2d}.{:0>2d}"
-    file_str = file_mask.format(date.year,date.month,date.day,
+    file_str = file_mask.format(date.year, date.month, date.day,
                                 hour, minute)
     return date_str, hour_str, file_str
+
+
+class SQLiteDB:
+    """
+    Fuggvenyek:
+     - TracerouteMeasure-bol allo lista kezelese:
+      - Json file keszitese
+      - Beemelese SQLite adatbazisba
+      - ellistak beemelese SQLite adatbazisba
+      - IP cimek beolvasasa
+      - DNS nevek beolvasasa
+     - Ezen funkciok akar adatbazisbol beolvasva (nyers traceroute-bol)
+     - ip cim - domain nev parok tarolasa
+     - ip cim id parositas
+     - domain nev - id parositas
+    """
+
+    def __init__(self, file_name):
+        self.con = sql.connect(file_name)
+        self.c = self.con.cursor()
+
+    def close(self):
+        self.con.commit()
+        self.c.close()
+        self.con.close()
+
+    def fetch(self, sql_cmd, params):
+        self.c.execute(sql_cmd, params)
+        return self.c.fetchall()
+
+    def fetchOne(self, sql_cmd, params):
+        self.c.execute(sql_cmd, params)
+        return self.c.fetchone()
+
+    def pushLink(self, index, fromID, toID, rtt, weight, traceID):
+        self.c.execute('INSERT INTO "edge" VALUES(NULL, ?, ?, ?, ?, ?, ?)',
+                       (fromID, toID, rtt, weight, traceID, index,))
+        # con.commit()
+
+    def get_IP_ID_db(self, ip):
+        self.c.execute('SELECT "id" FROM "node" WHERE "ip"=?;', (ip,))
+        res = self.c.fetchone()
+        if res == None:
+            return None
+        else:
+            return res[0]
+
+    def getIP_from_ID(self, id):
+        self.c.execute('SELECT "ip" FROM "node" WHERE "id"=?;', (id,))
+        res = self.c.fetchone()
+        if res == None:
+            return None
+        else:
+            return res[0]
+
+    def getRes(self, date):
+        self.c.execute("""SELECT "start", "end", "res", "id" FROM "rawTrace"'+
+                  'WHERE "online"=1 and "error"=0 and "date" LIKE ? ;""", ("%s" % (date),))
+        return self.c.fetchall()
+
+    def pushIP(self, putIP):
+        if putIP == None:
+            return None
+        id = self.get_IP_ID_db(putIP)
+        if (id == None):
+            self.c.execute('INSERT INTO "node" VALUES(NULL, ?)', (putIP,))
+            self.con.commit()
+            id = self.get_IP_ID_db(putIP)
+        return id
 
 
 if __name__ == "__main__":

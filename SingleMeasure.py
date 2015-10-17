@@ -1,6 +1,9 @@
-from Main import *
 import sys
 import argparse
+from Measuring import Measure, ParalellMeasure
+from Main import setup_logging, target1, target2
+from RemoteScripting import check_iperf
+import logging
 
 DEFAULT_NODE = "128.208.4.198"
 
@@ -81,8 +84,8 @@ def create_paralell_iperf(node, target1, target2):
 
     for i in range(20, 25):
         start_time = (i-20)*3*(duration+3)
-        paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw"+str(i),
-                                                          target1, target2, i, start_time)
+        #paralell_measure = addIperf_oneBandwidth_scenario(paralell_measure, "bw"+str(i),
+        #                                                  target1, target2, i, start_time)
     #paralell_measure = addIperf(paralell_measure, "test", target1,
     #                                5, duration, bandwidth, port, interval)
 
@@ -93,13 +96,9 @@ def create_paralell_iperf(node, target1, target2):
     return paralell_measure
 
 
-def main():
-    setup_logging()
-    args = arg_parse()
-    node = args.n
-
+def one_measure(node):
     iperf_check = check_iperf(node)
-    logger.info("Iperf install check on node '%s': %s" % (node, iperf_check))
+    logging.getLogger().info("Iperf install check on node '%s': %s" % (node, iperf_check))
 
     if "installed" not in iperf_check:
         return
@@ -107,9 +106,19 @@ def main():
     akt.startMeasure()
     akt.join()
     data = akt.getData(False)
+    from DataHandling import save_one_measure
+
     if data is not None:
-        #print data
-        saveOneMeasure(data)
+        save_one_measure(data, db=True)
+
+def main():
+    global  logger
+
+    logger = setup_logging()
+    args = arg_parse()
+    node = args.n
+
+    one_measure(node)
 
 
 if __name__ == "__main__":

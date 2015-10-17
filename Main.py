@@ -3,14 +3,12 @@ __author__ = 'Rudolf Horvath'
 import sys
 
 sys.path.append("utils")
-import Measuring as measure
-import json
 import paramiko
-import os
 import subprocess
 import logging
 import traceback
 import RemoteScripting as remote
+
 
 # Constants
 rsa_file = 'ssh_needs/id_rsa'
@@ -27,17 +25,20 @@ target2 = "152.66.127.81"
 target_names = [target1, target2]
 target_username = "mptcp"
 
+
 remote.Connection.connectionbuilder = \
     remote.ConnectionBuilder(slice_name, rsa_file, None)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
+
 def main():
     pass
-    #continous_measuring()
-    #remote.scan_os_types(used_threads)
-    remote.get_scan_statistic()
+    continous_measuring()
+    # remote.scan_os_types(used_threads)
+    # remote.get_scan_statistic()
 
 
 def setup_logging():
@@ -57,23 +58,12 @@ def setup_logging():
     handler.addFilter(MyFilter())
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-
-
-def saveOneMeasure(data):
-    timeStamp = measure.getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (measure.getDate(), timeStamp[:2], measure.getDate(), timeStamp)
-
-    if not os.path.exists(os.path.dirname(filename)):
-        os.makedirs(os.path.dirname(filename))
-
-    with open(filename, 'w') as f:
-        f.write(json.dumps(data, indent=2))
+    return logger
 
 
 def continous_measuring():
 
     def measure_node(node, i):
-        log = "empty string"
         try:
             log = subprocess.check_output(["python", "SingleMeasure.py", "-n", node])
         except Exception:
@@ -87,7 +77,7 @@ def continous_measuring():
         nodes = remote.getPlanetLabNodes(slice_name)
         i = 0
         for node in nodes:
-            i = (i+1)%5
+            i = (i + 1) % 5
             measure_node(node, i)
 
 
