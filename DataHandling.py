@@ -14,12 +14,13 @@ from RemoteScripting import getBestNodes
 import SingleMeasure
 
 def main():
-    nodes = getBestNodes()
 
-    #for node in nodes:
-    #    SingleMeasure.one_measure(node)
+    # SingleMeasure.one_measure(getBestNodes()[0])
 
-    SingleMeasure.one_measure(nodes[0])
+    from_date = datetime.date(2015, 9, 2)
+    until_date = datetime.date(2015, 10, 7)
+
+    push_results_to_db(from_date, until_date)
 
 
 def save_one_measure(data, db=False):
@@ -27,10 +28,17 @@ def save_one_measure(data, db=False):
     filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
 
     if db:
-        mongo_client = MongoClient("localhost", 27017)
-        db = mongo_client.client["dev"]
-        collection = db["raw"]
-        collection.insert_one(data)
+        app_name = os.environ['OPENSHIFT_APP_NAME']
+        mongo_url = os.environ['OPENSHIFT_MONGODB_DB_URL']
+
+        client = MongoClient(mongo_url)
+        db = client[app_name]
+        collection = db["raw_measures"]
+        collection.insert_one(json.loads(json.dumps(data)))
+
+        collection = db["processed_measures"]
+        collection.insert_one(read_measure(data))
+
 
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
@@ -39,20 +47,27 @@ def save_one_measure(data, db=False):
         f.write(json.dumps(data, indent=2))
 
 
-def push_results_to_db():
-    from_date = datetime.date(2014, 9, 5)
-    until_date = datetime.date(2016, 10, 2)
+def push_results_to_db(from_date=None, until_date=None):
+    if from_date is None:
+        from_date = datetime.date(1970, 1, 1)
+    if until_date is None:
+        until_date = datetime.date(2038, 1, 1)
 
-    results = read_results("results", from_date, until_date)
+    results = read_results("results", from_date, until_date, process=False)
     mongo_client = MongoClient("localhost", 27017)
-    db = mongo_client.client["dev"]
+    db = mongo_client["dev"]
     collection = db["raw"]
+
+    print "readed: ", len(results)
 
     if results is None:
         print "Error at result reading"
         return
 
+
     for doc in results:
+        if doc is not None and "time" in doc.keys():
+            doc["time"] = datetime.datetime.fromtimestamp(doc["time"])
         collection.insert_one(doc)
 
         # print "readed iperf measurements: %d" % i
@@ -159,11 +174,13 @@ def read_measure(measure_session):
     return results
 
 
-def read_results(results_dir="results", from_date=None, until_date=None):
+def read_results(results_dir="results", from_date=None,
+                 until_date=None, process=True):
     log = logging.getLogger("read_results").info
     results = []
 
-    if not os.path.exists(results_dir) or not os.path.isdir(results_dir):
+    if not os.path.exists(results_dir) or\
+        not os.path.isdir(results_dir):
         log("path does not exists")
         return
 
@@ -195,9 +212,16 @@ def read_results(results_dir="results", from_date=None, until_date=None):
             files.extend(map(lambda x: dir + "/" + x, elements))
 
     for to_read in files:
-        with open(to_read, 'r') as f:
-            akt = json.loads(f.read())
-            results.extend(read_measure(akt))
+        try:
+            with open(to_read, 'r') as f:
+                akt = json.loads(f.read())
+                if process:
+                    results.extend(read_measure(akt))
+                else:
+                    results.extend(akt)
+
+        except Exception:
+            log("Error at: %s", to_read)
     return results
 
 

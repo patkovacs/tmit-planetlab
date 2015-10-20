@@ -440,7 +440,7 @@ class ParalellMeasure:
             #print "Error: ", item["measure"].error
             res.append(item["measure"].getData(sendError, sendErrorTrace))
 
-        return res
+        return {"result": res, "name":"ParalellIperf"}
 
 
 class TracerouteMeasure(Measure):
