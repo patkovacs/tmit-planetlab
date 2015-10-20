@@ -15,6 +15,7 @@ import simplejson as json
 from collections import Counter
 from threadedMap import thread_map, proc_map
 import os
+import Measuring as measure
 
 
 # Constants
@@ -361,7 +362,7 @@ def check_iperf(node):
 
     log("Installation started")
     try:
-        install_iperf(con, node)
+        install_iperf(con)
     except Exception:
         log("Installation failed: " + traceback.format_exc())
         return "install failed: " + \
@@ -388,11 +389,12 @@ def check_iperf(node):
 
 
 def testOs(node_ip):
+    log = logging.getLogger("test_os"+node_ip.replace(".", "_")).info
     cmd = "cat /etc/issue"
     # uname -r --> gives some more inforamtion about kernel and architecture
     node = {"ip": node_ip}
 
-    print "connect to: ", node_ip
+    log("connect to: "+ node_ip)
     con = Connection(node["ip"])
     con.connect()
 
@@ -400,10 +402,10 @@ def testOs(node_ip):
 
     if con.error is not None:
         node["error"] = con.errorTrace.splitlines()[-1]
-        print "connection error: ", node_ip, " --: ", node["error"]
+        log("connection error: "+ node_ip+ " --: "+ node["error"])
         return node
 
-    print "connection succesfull: ", node_ip
+    log("connection succesfull: " + node_ip)
     try:
         outp, err = con.runCommand(cmd)
     except Exception:
@@ -435,7 +437,7 @@ def scan_iperf_installations(slice_name, used_threads=200):
     c = Counter(results)
     print "Results:"
 
-    stats = {"date": getDate(), "time": getTime()}
+    stats = {"date": measure.getDate(), "time": measure.getTime()}
     for item in c.most_common():
         stats[item[0]] = item[1]
 
@@ -448,26 +450,30 @@ def scan_iperf_installations(slice_name, used_threads=200):
 
 
 def scan_os_types(used_threads=200):
-    print "get planet lab ip list"
+    log = logging.getLogger("scan_os").info
+
+    log("get planet lab ip list")
     node_ips = getPlanetLabNodes(slice_name)
 
-    print "start scanning them "
+    log("start scanning them ")
     nodes = thread_map(testOs, node_ips, used_threads)
 
-    print "write out the results"
+    log("write out the results")
     with open("results/scan.json", "w") as f:
         f.write(json.dumps(nodes))
 
-    print "create statistics"
+    log("create statistics")
     online = reduce(lambda acc, new:
                     acc + 1 if new["online"] else acc,
                     nodes, 0)
-    print "Online nodes: ", online
+    log("Online nodes: %d", online)
 
     error = reduce(lambda acc, new:
-                   acc + 1 if new.has_key("error") else acc,
+                   acc + 1 if new.has_key("error")
+                              and new["error"] != "offline"
+                   else acc,
                    nodes, 0)
-    print "Occured errors: ", error
+    log("Occured errors: %d", error)
 
 
 def get_scan_statistic(filename="results/scan.json"):
@@ -476,16 +482,25 @@ def get_scan_statistic(filename="results/scan.json"):
         errors = Counter()
         outp = Counter()
         offline = 0
+        online = 0
+        error = 0
+        succeed = 0
         for node in nodes:
             if not node["online"]:
                 offline += 1
                 continue
-            if node.has_key("error"):
+            online += 1
+            if node.has_key("error") and node["error"] != "offline":
                 errors[node["error"]] += 1
+                error += 1
             else:
                 outp[node["outp"]] += 1
+                succeed += 1
 
-        print "Offline count: ", offline, "\n"
+        print "Online count: ", online
+        print "Offline count: ", offline
+        print "Error count: ", error
+        print "Succeed count: ", succeed, "\n"
 
         for type, count in errors.most_common(len(errors)):
             print "Error count:%d\n\t%s" % (count, type)

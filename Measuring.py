@@ -3,7 +3,7 @@ __date__ = "2015.06.15"
 
 import sys
 sys.path.append("utils")
-from RemoteScripting import Connection
+from RemoteScripting import *
 import time
 from datetime import date, datetime
 import paramiko
@@ -440,7 +440,7 @@ class ParalellMeasure:
             #print "Error: ", item["measure"].error
             res.append(item["measure"].getData(sendError, sendErrorTrace))
 
-        return res
+        return {"result": res, "name":"ParalellIperf"}
 
 
 class TracerouteMeasure(Measure):

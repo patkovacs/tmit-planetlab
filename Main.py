@@ -3,21 +3,21 @@ __author__ = 'Rudolf Horvath'
 import sys
 
 sys.path.append("utils")
-from RemoteScripting import *
-from Measuring import *
-import json
 import paramiko
-import os
 import subprocess
 import logging
 import traceback
+import RemoteScripting as remote
+from threading import Timer
+
 
 # Constants
 rsa_file = 'ssh_needs/id_rsa'
 knownHosts_file = 'ssh_needs/known_hosts'
+slice_name = remote.slice_name
 
 used_procs = 100
-used_threads = 200
+used_threads = 300
 
 RUN_MEASURES = ["iperf"]  # , "traceroute"]
 
@@ -26,14 +26,20 @@ target2 = "152.66.127.81"
 target_names = [target1, target2]
 target_username = "mptcp"
 
-Connection.connectionbuilder = \
-    ConnectionBuilder(slice_name, rsa_file, None)
 
+remote.Connection.connectionbuilder = \
+    remote.ConnectionBuilder(slice_name, rsa_file, None)
+
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 
 def main():
+    pass
     continous_measuring()
+    # remote.scan_os_types(used_threads)
+    # remote.get_scan_statistic()
 
 
 def setup_logging():
@@ -53,38 +59,42 @@ def setup_logging():
     handler.addFilter(MyFilter())
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+    return logger
 
 
-def saveOneMeasure(data):
-    timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
+def measure_node(node, i, timeout):
+    cmd = ["python", "SingleMeasure.py", "-n", node]
 
-    if not os.path.exists(os.path.dirname(filename)):
-        os.makedirs(os.path.dirname(filename))
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
 
-    with open(filename, 'w') as f:
-        f.write(json.dumps(data, indent=2))
+    timer = Timer(timeout, lambda p: p.kill(), [proc])
+
+    stderr = ""
+    try:
+        timer.start()
+        log, stderr = proc.communicate()
+    except Exception:
+        log = "Reaching node %s failed (error calling process):\n%s" % (node, traceback.format_exc())
+    finally:
+        timer.cancel()
+
+    if len(stderr)>0:
+        log = "Reaching node %s failed (error in called process):\n%s" % (node, stderr)
+    # Save log for last measure
+    with open("Main.py.%d.log" % i, 'w') as f:
+        f.write(log)
 
 
 def continous_measuring():
-
-    def measure_node(node, i):
-        log = "empty string"
-        try:
-            log = subprocess.check_output(["python", "SingleMeasure.py", "-n", node])
-        except Exception:
-            log = "Reaching node %s failed:\n%s" % (node, traceback.format_exc())
-
-        # Save log for last measure
-        with open("Main.py.%d.log" % i, 'w') as f:
-            f.write(log)
+    timeout = 10 # 2 minutes maximum allowed
 
     while True:
-        nodes = getPlanetLabNodes(slice_name)
+        nodes = remote.getPlanetLabNodes(slice_name)
         i = 0
         for node in nodes:
-            i = (i+1)%5
-            measure_node(node, i)
+            i = (i + 1) % 5
+            measure_node(node, i, timeout)
 
 
 if __name__ == "__main__":
