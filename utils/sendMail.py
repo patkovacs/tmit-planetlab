@@ -19,6 +19,7 @@ me =  "limiere@sendgrid.net"
 path = "https://api.sendgrid.com/api/mail.send.json"
 token = "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"
 
+msg = msg.replace("\n", "\r\n")
 header = {"Authorization": "Bearer "+token}
 req = {"to": me,
         "subject": sub,
