@@ -1,21 +1,20 @@
-__author__ = 'Rudolf Horvath'
-__date__ = "2015.06.15"
-
-# Imports
-import paramiko
-import xmlrpclib
-import platform
+import os
+import sys
 import subprocess
 import traceback
 import socket
 from threading import Thread
 import time
 import logging
+import platform
 import simplejson as json
+import paramiko
+import xmlrpclib
 from collections import Counter
-from threadedMap import thread_map, proc_map
-import os
-import Measuring as measure
+
+sys.path.append("utils")
+import lib
+import utils
 
 
 # Constants
@@ -430,14 +429,14 @@ def scan_iperf_installations(slice_name, used_threads=200):
     nodes = getPlanetLabNodes(slice_name)
 
     print "start scanning on %d threads" % (used_threads)
-    results = thread_map(install_iperf, nodes, used_threads)
+    results = utils.thread_map(install_iperf, nodes, used_threads)
     # results = proc_map(install_iperf, nodes, used_threads)
 
     print "--------------------"
     c = Counter(results)
     print "Results:"
 
-    stats = {"date": measure.getDate(), "time": measure.getTime()}
+    stats = {"date": lib.get_date(), "time": lib.get_time()}
     for item in c.most_common():
         stats[item[0]] = item[1]
 
@@ -456,7 +455,7 @@ def scan_os_types(used_threads=200):
     node_ips = getPlanetLabNodes(slice_name)
 
     log("start scanning them ")
-    nodes = thread_map(testOs, node_ips, used_threads)
+    nodes = utils.thread_map(testOs, node_ips, used_threads)
 
     log("write out the results")
     with open("results/scan.json", "w") as f:

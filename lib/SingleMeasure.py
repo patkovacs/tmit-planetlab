@@ -1,9 +1,11 @@
 import sys
 import argparse
-from Measuring import Measure, ParalellMeasure
-from Main import setup_logging, target1, target2
-from RemoteScripting import check_iperf
 import logging
+
+sys.path.append("..")
+sys.path.append("utils")
+import lib
+from Main import target1, target2, setup_logging
 
 DEFAULT_NODE = "128.208.4.198"
 
@@ -38,23 +40,23 @@ def create_paralell_iperf(node, target1, target2):
     # ip address - port - duration - interval - bandwidth Mbitps
     start_client_skeleton = "iperf -c %s -p %d -u -t %d -i %d -b %dm -f m -i 1"
 
-    paralell_measure  = ParalellMeasure()
+    paralell_measure  = lib.ParalellMeasure()
 
     # Traceroute
-    akt = Measure(node, target1)
+    akt = lib.Measure(node, target1)
     akt.setScript("traceroute", trace_script)
     paralell_measure.addMeasure(akt, 0)
 
-    akt = Measure(node, target2)
+    akt = lib.Measure(node, target2)
     akt.setScript("traceroute", trace_script)
     paralell_measure.addMeasure(akt, 0)
 
     def addIperf(paralell_measure, name, target, start, duration, bandwidth, port, interval):
-        akt = Measure(target, None, "mptcp")
+        akt = lib.Measure(target, None, "mptcp")
         akt.setScript("iperf_server_"+name, iperf_server_script % (target, port), duration+3)
         paralell_measure.addMeasure(akt, start, True, duration+2)
 
-        akt = Measure(node, target)
+        akt = lib.Measure(node, target)
         script = start_client_skeleton % (target, port, duration,
                                           interval, bandwidth)
         akt.setScript("iperf_client_"+name, script)
@@ -97,7 +99,7 @@ def create_paralell_iperf(node, target1, target2):
 
 
 def one_measure(node):
-    iperf_check = check_iperf(node)
+    iperf_check = lib.check_iperf(node)
     logging.getLogger().info("Iperf install check on node '%s': %s" % (node, iperf_check))
 
     if "installed" not in iperf_check:

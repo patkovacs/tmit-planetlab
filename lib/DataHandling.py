@@ -1,17 +1,15 @@
-__author__ = 'Rudolf Horvath'
-__date__ = '2015.06.15'
-
 import sqlite3 as sql
 import os
+import sys
 import logging
 import json
-import iperf_parse
 import datetime
-import trparse
 from pymongo import MongoClient
-from Measuring import getDate, getTime
-from RemoteScripting import getBestNodes
-import SingleMeasure
+
+sys.path.append("utils")
+import utils
+import lib
+
 
 def main():
 
@@ -24,8 +22,8 @@ def main():
 
 
 def save_one_measure(data, db=False):
-    timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
+    timeStamp = lib.get_time().replace(":", ".")[0:-3]
+    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (lib.get_date(), timeStamp[:2], lib.get_date(), timeStamp)
 
     if db:
         app_name = os.environ['OPENSHIFT_APP_NAME']
@@ -36,8 +34,8 @@ def save_one_measure(data, db=False):
         collection = db["raw_measures"]
         collection.insert_one(json.loads(json.dumps(data)))
 
-        collection = db["processed_measures"]
-        collection.insert_one(read_measure(data))
+        collection2 = db["processed_measures"]
+        collection2.insert_one(json.loads(json.dumps(read_measure(data))))
 
 
     if not os.path.exists(os.path.dirname(filename)):
@@ -92,7 +90,7 @@ def parse_traceroute(measure, from_ip):
     outp = measure["result"]
     time = datetime.datetime.fromtimestamp(measure["time"])
 
-    parse = trparse.loads(outp, from_ip)
+    parse = utils.trparse.loads(outp, from_ip)
 
     prev_ip = from_ip
     end_ip = parse.dest_ip
@@ -147,7 +145,7 @@ def parse_traceroute(measure, from_ip):
 
 def parse_iperf(measure):
     outp = measure["result"]
-    return iperf_parse.parse(outp)
+    return utils.iperf_parse.parse(outp)
 
 
 def read_measure(measure_session):

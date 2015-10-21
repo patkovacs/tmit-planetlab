@@ -1,20 +1,19 @@
-__author__ = 'Rudolf Horvath'
-
 import sys
-
-sys.path.append("utils")
 import paramiko
 import subprocess
 import logging
 import traceback
-import RemoteScripting as remote
 from threading import Timer
+
+sys.path.append("lib")
+sys.path.append("lib/utils")
+import lib
 
 
 # Constants
 rsa_file = 'ssh_needs/id_rsa'
 knownHosts_file = 'ssh_needs/known_hosts'
-slice_name = remote.slice_name
+slice_name = 'budapestple_cloud'
 
 used_procs = 100
 used_threads = 300
@@ -27,8 +26,8 @@ target_names = [target1, target2]
 target_username = "mptcp"
 
 
-remote.Connection.connectionbuilder = \
-    remote.ConnectionBuilder(slice_name, rsa_file, None)
+lib.Connection.connectionbuilder = \
+    lib.ConnectionBuilder(slice_name, rsa_file, None)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -63,7 +62,7 @@ def setup_logging():
 
 
 def measure_node(node, i, timeout):
-    cmd = ["python", "SingleMeasure.py", "-n", node]
+    cmd = ["python", "lib/SingleMeasure.py", "-n", node]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
@@ -90,7 +89,7 @@ def continous_measuring():
     timeout = 10 # 2 minutes maximum allowed
 
     while True:
-        nodes = remote.getPlanetLabNodes(slice_name)
+        nodes = lib.getPlanetLabNodes(slice_name)
         i = 0
         for node in nodes:
             i = (i + 1) % 5

@@ -1,5 +1,0 @@
-paramiko
-simplejson
-requests
-requests[security]
-dnspython

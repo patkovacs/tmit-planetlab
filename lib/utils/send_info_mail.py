@@ -3,7 +3,6 @@ import requests
 import subprocess
 import traceback
 
-print "python script started"
 
 to_mail = "rudolf.official@gmail.com"
 from_mail =  "python-limiere@sendgrid.net"
@@ -37,4 +36,4 @@ req = {"to": to_mail,
 
 feedback = requests.post(path, req, headers=header)
 print "Status info e-mail send: ", ("Succeed" if "success" in feedback.content else "Failed")
-__author__ = 'Rudolf'
+
