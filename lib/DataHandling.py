@@ -12,14 +12,93 @@ import lib
 
 
 def main():
+    pass
+
+    raw = get_collection("raw_measures", True)
+    measures = raw.find()
+    for measure in measures:
+        if "result" not in measure:
+            continue
+        for item in measure["result"]:
+            if "name" not in item or\
+                  item["name"] != "traceroute":
+                continue
+            parse = parse_traceroute2(item["result"],
+                                      item["from"])
+
+        exit()
+
+
 
     # SingleMeasure.one_measure(getBestNodes()[0])
+    #from_date = datetime.date(2015, 9, 2)
+    #until_date = datetime.date(2015, 10, 7)
+    #push_results_to_db(from_date, until_date)
 
-    from_date = datetime.date(2015, 9, 2)
-    until_date = datetime.date(2015, 10, 7)
+def parse_traceroute2(measure, from_ip):
+    outp = measure["result"]
+    time = datetime.datetime.fromtimestamp(measure["time"])
 
-    push_results_to_db(from_date, until_date)
+    parse = utils.trparse.loads(outp, from_ip)
 
+    prev_ip = from_ip
+    end_ip = parse.dest_ip
+    prev_rtt = 0
+    index = 0
+    links = []
+
+    for hop in parse.hops:
+        probes = {}
+        for probe in hop.probes:
+            if probe == "*":
+                continue
+            if probe.ip not in probes:
+                probes[probe.ip]["rtt_list"] = [probe.rtt]
+            else:
+                probes[probe.ip].append(probe.rtt)
+        if probes == {}:
+            continue
+        mainProbe = None
+        maxCount = 0
+        for probe, data in probes.iteritems():
+
+
+        aktIP = mainProbe
+        links.append({
+            "from": prev_ip,
+            "to": aktIP,
+            "delay": avgRTT - prev_rtt
+        })
+        prev_ip = aktIP
+        index += 1
+        prev_rtt = avgRTT
+
+    res = {
+        "from": from_ip,
+        "to": end_ip,
+        "datetime": time,
+        "links": links
+    }
+
+    # print json.dumps(res, indent=2, default=json_util.default)
+
+    # for ip in ip_list:
+    #     print "ip: ", ip
+    #     geoloc = get_geoloc(ip)
+    #     asn = get_asn(ip)
+
+    return res
+
+def get_collection(name, local=False):
+    if local:
+        client = MongoClient("localhost", 27017)
+        db = client["dev"]
+    else:
+        app_name = os.environ['OPENSHIFT_APP_NAME']
+        mongo_url = os.environ['OPENSHIFT_MONGODB_DB_URL']
+        client = MongoClient(mongo_url)
+        db = client[app_name]
+    return db[name]
 
 def save_one_measure(data, db=False):
     timeStamp = lib.get_time().replace(":", ".")[0:-3]

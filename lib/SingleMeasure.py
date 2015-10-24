@@ -5,9 +5,15 @@ import logging
 sys.path.append("..")
 sys.path.append("utils")
 import lib
-from Main import target1, target2, setup_logging
+from Main import target1, target2, setup_logging, slice_name
+
+# Constants
+rsa_file = '../ssh_needs/id_rsa'
 
 DEFAULT_NODE = "128.208.4.198"
+
+lib.Connection.connectionbuilder = \
+    lib.ConnectionBuilder(slice_name, rsa_file, None)
 
 
 def arg_parse():
@@ -103,6 +109,7 @@ def one_measure(node):
     logging.getLogger().info("Iperf install check on node '%s': %s" % (node, iperf_check))
 
     if "installed" not in iperf_check:
+        logging.getLogger().info("Iperf not installed")
         return
     akt = create_paralell_iperf(node, target1, target2)
     akt.startMeasure()
@@ -112,6 +119,7 @@ def one_measure(node):
 
     if data is not None:
         save_one_measure(data, db=True)
+
 
 def main():
     global  logger

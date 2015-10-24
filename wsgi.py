@@ -34,8 +34,10 @@ def python_processes():
     actTime = None
     for line in msg.splitlines():
         match = RE_PROCESS_INFO.search(line)
+        if "wsgi" in line:
+            actTime = line
         if match is not None:
-            if "wsgi.py" in match.group(6):
+            if "wsgi" in match.group(6):
                 actTime = match.group(4)
                 continue
             info = {

@@ -408,7 +408,7 @@ class ParalellMeasure:
 
 
 class TracerouteMeasure(Measure):
-    traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
+    traceroute_skeleton = "traceroute -w 5.0 -q 20 %s"
 
     def __init__(self, from_ip, to_ip):
         Measure.__init__(self, from_ip, to_ip)
