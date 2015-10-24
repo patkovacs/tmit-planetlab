@@ -23,21 +23,19 @@ def main():
             if "name" not in item or\
                   item["name"] != "traceroute":
                 continue
-            parse = parse_traceroute2(item["result"],
+            parse = parse_traceroute2(item,
                                       item["from"])
-
-        exit()
-
-
+            exit()
 
     # SingleMeasure.one_measure(getBestNodes()[0])
     #from_date = datetime.date(2015, 9, 2)
     #until_date = datetime.date(2015, 10, 7)
     #push_results_to_db(from_date, until_date)
 
+
 def parse_traceroute2(measure, from_ip):
     outp = measure["result"]
-    time = datetime.datetime.fromtimestamp(measure["time"])
+    time = measure["time"]#datetime.datetime.fromtimestamp(measure["time"])
 
     parse = utils.trparse.loads(outp, from_ip)
 
@@ -50,24 +48,42 @@ def parse_traceroute2(measure, from_ip):
     for hop in parse.hops:
         probes = {}
         for probe in hop.probes:
-            if probe == "*":
+            if probe.rtt is None:
                 continue
             if probe.ip not in probes:
-                probes[probe.ip]["rtt_list"] = [probe.rtt]
+                probes[probe.ip] = {"rtt_list": [float(probe.rtt)]}
             else:
-                probes[probe.ip].append(probe.rtt)
+                probes[probe.ip]["rtt_list"].append(float(probe.rtt))
         if probes == {}:
             continue
         mainProbe = None
         maxCount = 0
         for probe, data in probes.iteritems():
+            count = len(data["rtt_list"])
+            sum = reduce(lambda acc, new:
+                            acc + new, data["rtt_list"])
+            avg = sum / count
+            dev = reduce(lambda acc, new:
+                            acc + (avg - new)**2, data["rtt_list"], 0)
+            dev = (dev / count)**0.5
+            data["sum"] = sum
+            data["count"] = count
+            data["avg"] = avg
+            data["deviation"] = dev
+            if mainProbe is None or maxCount < count:
+                mainProbe = probe
+                maxCount = count
 
-
+        avgRTT = probes[mainProbe]["avg"]
         aktIP = mainProbe
+        from_asn = str(utils.get_as_req(prev_ip))
+        to_asn = str(utils.get_as_req(aktIP))
         links.append({
-            "from": prev_ip,
-            "to": aktIP,
-            "delay": avgRTT - prev_rtt
+            "from": from_asn+":"+prev_ip,
+            "to": to_asn+":"+aktIP,
+            "delay": avgRTT - prev_rtt,
+            "rtt": avgRTT,
+            "jitter": probes[mainProbe]["deviation"]
         })
         prev_ip = aktIP
         index += 1
@@ -79,6 +95,7 @@ def parse_traceroute2(measure, from_ip):
         "datetime": time,
         "links": links
     }
+    print json.dumps(res, indent=2)
 
     # print json.dumps(res, indent=2, default=json_util.default)
 
@@ -113,8 +130,8 @@ def save_one_measure(data, db=False):
         collection = db["raw_measures"]
         collection.insert_one(json.loads(json.dumps(data)))
 
-        collection2 = db["processed_measures"]
-        collection2.insert_one(json.loads(json.dumps(read_measure(data))))
+        #collection2 = db["processed_measures"]
+        #collection2.insert_one(json.loads(json.dumps(read_measure(data))))
 
 
     if not os.path.exists(os.path.dirname(filename)):

@@ -18,6 +18,7 @@ from pymongo import MongoClient
 from bson.code import Code
 import traceback
 import datetime
+import glob
 
 
 def python_processes():
@@ -114,6 +115,21 @@ def last_measure_time():
             "min": min}
 
 
+def measure_outputs():
+    repo_dir = os.environ['OPENSHIFT_REPO_DIR']
+    logs = glob.glob1(repo_dir, "*.log")
+    res = []
+    if len(logs) == 0:
+        res.append("No logs found!")
+    else:
+        for log_file in logs:
+            with open(os.path.join(repo_dir, log_file), "r") as f:
+                log = f.read().replace("\n", "\n\t")
+                res.append("\n\n%s:\n%s"%(log_file, log))
+
+    return "".join(res)
+
+
 def homepage():
     server_time, proc_infos = python_processes()
     measurement_info = last_measure_time()
@@ -147,7 +163,11 @@ Measurement times:
     Max date: %s
     Now date: %s
     Min from epoch: %s
-    Max from epoch: %s""" % \
+    Max from epoch: %s
+
+Output log of last 5 measurements:
+
+%s""" % \
         (server_time,
          proc_list,
          int(delta/(24*60*60)), # Days
@@ -158,28 +178,13 @@ Measurement times:
          max.isoformat("\t"),
          now.isoformat("\t"),
          str(measurement_info["min"]),
-         str(measurement_info["max"])
+         str(measurement_info["max"]),
+         measure_outputs()
          )
-
-
-    """
-    msg = "Server time: "+server_time+\
-          "\n\nPython processes:\n"+proc_list+\
-          "\n\nElapsed time after last measurement:"+\
-          "\nDays: "+str(delta/(24*60*60))+\
-          "\nHours: "+str((delta%(24*60*60))/(60*60))+\
-          "\nMinutes: "+str((delta%(60*60))/(60))+\
-          "\nSeconds: "+str(delta%(60))+\
-          "\n\nMeasurement times:\n"+\
-          "Min date: "+min.isoformat("\t")+"\n"\
-          "Max date: "+max.isoformat("\t")+"\n"\
-          "Now date: "+now.isoformat("\t")+"\n\n"+\
-          "Min from epoch: "+str(measurement_info["min"])+"\n"\
-          "Max from epoch: "+str(measurement_info["max"])+"\n\n\n"
-    """
 
     msg = msg.replace("\n", "<br>")
     msg = msg.replace(" ", "&nbsp;")
+    msg = msg.replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
     return msg
 
 def application(environ, start_response):

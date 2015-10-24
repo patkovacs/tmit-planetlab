@@ -12,7 +12,7 @@ import lib
 
 # Constants
 rsa_file = 'ssh_needs/id_rsa'
-knownHosts_file = 'ssh_needs/known_hosts'
+#knownHosts_file = 'ssh_needs/known_hosts'
 slice_name = 'budapestple_cloud'
 
 used_procs = 100

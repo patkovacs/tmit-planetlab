@@ -400,8 +400,8 @@ class ParalellMeasure:
             # print "Item: ", item
             # print "Error: ", item["measure"].error
             data = item["measure"].getData(sendError, sendErrorTrace)
-            if timestamp is None:
-                timestamp = data["time"]
+            #if timestamp is None:
+            #    timestamp = data["time"]
             res.append(data)
 
         return {"result": res, "name": "ParalellIperf", "time": timestamp}

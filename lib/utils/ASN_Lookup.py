@@ -46,9 +46,37 @@ def get_as(ip):
     asn = get_asn(ip)
     return get_as_details(asn)
 
+def get_as_req(ip):
+    import requests
+    data = {
+        "action": "do_whois",
+        "addr": ip,
+        "family": "ipv4",
+        "method_whois": "whois",
+        "flag_prefix": "prefix",
+        "bulk_paste": ip,
+        "submit_paste": "Submit"
+    }
+    res = requests.get("http://asn.cymru.com/cgi-bin/whois.cgi", data)
+    state = 0
+    info = None
+    for line in res.text.splitlines():
+        if "<PRE>" in line or state > 0:
+            state += 1
+        if state == 4:
+            info = line
+            break
+    if info is None:
+        return None
+    info.strip()
+    asn = info.split("|")[0]
+    if "NA" in asn:
+        return None
+    return int(asn)
+
 def main():
     for ip in _get_samples():
-        print get_as(ip)
+        print ip+" - "+str(get_as_req(ip))
 
 def _get_samples():
     return ["128.208.4.198",

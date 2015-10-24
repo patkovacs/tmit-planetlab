@@ -1,5 +1,5 @@
 #!/bin/sh
 
 echo "Starting continous measurement"
-nohup python Main.py > /dev/null &
+nohup python Main.py > head -n 100 > Main.out &
 echo "Continous measurement started"

@@ -18,8 +18,8 @@ import utils
 
 
 # Constants
-API_URL         = 'https://www.planet-lab.eu:443/PLCAPI/'
-PLC_CREDENTIALS = '../ssh_needs/credentials.private'
+API_URL = 'https://www.planet-lab.eu:443/PLCAPI/'
+PLC_CREDENTIALS = 'ssh_needs/credentials.private'
 slice_name = 'budapestple_cloud'
 
 
