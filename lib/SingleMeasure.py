@@ -15,7 +15,7 @@ rsa_file = '../ssh_needs/id_rsa'
 
 DEFAULT_NODE = "128.208.4.198"
 
-lib.Connection.connectionbuilder = \
+lib.Connection.connection_builder = \
     lib.ConnectionBuilder(slice_name, rsa_file, None)
 
 
@@ -91,7 +91,7 @@ def main():
         logger.info("RSA key not found!")
         exit()
 
-    lib.Connection.connectionbuilder = \
+    lib.Connection.connection_builder = \
         lib.ConnectionBuilder(slice_name, rsa_file, None)
 
     one_measure(node)

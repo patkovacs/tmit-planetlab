@@ -31,12 +31,12 @@ class Connection:
     """ This class represents an SSH connection to a remote server.
         It can be used to run c
     """
-    connectionbuilder = None
+    connection_builder = None
 
 
     def __init__(self, ip, username=None, conBuilder=None):
         if conBuilder is None:
-            self.conBuilder = Connection.connectionbuilder
+            self.conBuilder = Connection.connection_builder
         else:
             self.conBuilder = conBuilder
         self.ip = ip
@@ -213,6 +213,10 @@ class ConnectionBuilder:
 #=================================================
 # Functions to help contacting the PlanetLab nodes
 
+def set_ssh_data(username, rsa_key, known_hosts):
+    Connection.connection_builder = \
+        ConnectionBuilder(slice_name, rsa_key, known_hosts)
+
 
 def getBestNodes():
     return ["128.208.4.198",
@@ -264,6 +268,9 @@ def getPlanetLabNodes(slice_name):
         node_ids = plc_api.GetSlices(auth, slice_name, ['node_ids'])[0]['node_ids']
         return [item["hostname"] for item in plc_api.GetNodes(auth,node_ids,['hostname'])]
     except:
+        log = logging.getLogger("RemoteScripting.NodeList").info
+        log("Error donwloading PlanetLab node list from plc API: %s",
+            traceback.format_exc().splitlines()[-1])
         return node_list.splitlines()
 
     # get hostname for these nodes
