@@ -7,10 +7,12 @@ import os
 sys.path.append("..")
 sys.path.append("utils")
 import lib
-from Main import target1, target2, setup_logging, slice_name
+from utils import setup_logging
+from lib import slice_name, target1, target2, rsa_file
+#from Main import target1, target2, setup_logging, slice_name
 
 # Constants
-rsa_file = '../ssh_needs/id_rsa'
+# rsa_file = '../ssh_needs/id_rsa'
 
 
 DEFAULT_NODE = "128.208.4.198"
@@ -22,10 +24,10 @@ lib.Connection.connection_builder = \
 def search_dir(root, name, levels=0):
     matches = []
     for local_root, dirnames, filenames in os.walk(root):
-        print local_root+": "+str(dirnames)
+        #print local_root+": "+str(dirnames)
         for filename in fnmatch.filter(dirnames, name):
             matches.append(os.path.join(local_root, filename))
-    print "matches: "+str(matches)
+    #print "matches: "+str(matches)
 
     if len(matches) > 0:
         return matches[0]
@@ -73,12 +75,12 @@ def one_measure(node):
     data = akt.getData(False)
 
     if data is not None:
-        lib.save_one_measure(data, db=True)
+        lib.save_one_measure(data, db=False)
+        #lib.save_one_measure(data, db=True)
 
 
 def main():
     global logger, rsa_file
-    print "new!"
 
     logger = setup_logging()
     args = arg_parse()

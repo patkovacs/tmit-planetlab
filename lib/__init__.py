@@ -1,6 +1,13 @@
 import sys
 
 #if 'lib' not in sys.modules:
+from config import slice_name,\
+    rsa_file,\
+    known_hosts_file,\
+    target_names,\
+    target_username,\
+    target1,\
+    target2
 from DataHandling import *
 from Measuring import *
 from RemoteScripting import *

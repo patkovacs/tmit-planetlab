@@ -6,6 +6,7 @@ from Geoloc_Lookup import *
 from iperf_parse import *
 from threadedMap import *
 from trparse import *
+from my_logging import *
 
     # import Geoloc_Lookup
     # import iperf_parse

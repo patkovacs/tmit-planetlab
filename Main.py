@@ -13,21 +13,11 @@ sys.path.append("lib")
 sys.path.append("lib/utils")
 import lib
 import utils
-
+from lib import slice_name, rsa_file, known_hosts_file
 
 # Constants
 used_procs = 100
-used_threads = 20
-
-target1 = "152.66.244.82"
-target2 = "152.66.127.81"
-target_names = [target1, target2]
-target_username = "mptcp"
-
-rsa_file = 'ssh_needs/id_rsa'
-known_hosts_file = 'ssh_needs/known_hosts'
-slice_name = 'budapestple_cloud'
-
+used_threads = 50
 
 lib.set_ssh_data(slice_name, rsa_file, known_hosts_file)
 
@@ -35,46 +25,55 @@ lib.set_ssh_data(slice_name, rsa_file, known_hosts_file)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
+node_len = 0
+
 
 def main():
     pass
+
+    continous_measuring()
+    exit()
 
     if len(sys.argv) == 1:
         continous_measuring()
         return
     if sys.argv[1] == "scan":
-        cmd = "uname -a"
+        args = {
+            "cmd": "cat /etc/issue",
+            "save_result": False,
+            "do_statistics": False
+        }
+        # nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
+        #  timeout=10, save_erroneous=True,
+        #  save_stdout=True, save_stderr=True,
+        #  node_script=scan_script, save_result=True
 
-        def proc(stdout):
-            if "x86_64" in stdout:
-                return "64bit"
-            else:
-                return "32bit"
+        scan(**args)
+        return
+    if sys.argv[1] == "dev":
 
-        # @ToDo: Option to not save stdout, just data
-        # @ToDo: Option to not save erroneous
-        # @ToDo: Option to have a proc for stderr too?
-        scan(cmd, proc)
         return
 
     # remote.scan_os_types(used_threads)
     # remote.get_scan_statistic()
 
 
-
-
 def scan_script(args):
-    ip = args[0]
-    cmd = "cat /etc/issue"
-    proc = None
+    global node_len
+    node_len -= 1
 
-    if len(args) > 1 and args[1] is not None:
-        cmd = args[1]
-    if len(args) > 2 and args[2] is not None:
-        proc = args[2]
+    ip = args["ip"]
+    cmd = "cat /etc/issue"
+    timeout = 10
+
+    if "cmd" in args and args["cmd"] is not None:
+        cmd = args["cmd"]
+    if "timeout" in args and args["timeout"] is not None:
+        timeout = args["timeout"]
 
     log = logging.getLogger("scan."+str(ip).replace(".","_")).info
     node = {"ip": ip}
+    logging.getLogger("scan").fatal("nodes to do: %d", node_len)
 
     log("connect to: "+ ip)
     con = lib.Connection(node["ip"])
@@ -91,7 +90,7 @@ def scan_script(args):
     log("connection succesfull: " + ip)
     try:
         node["time"] = time.time()
-        outp, err = con.runCommand(cmd)
+        outp, err = con.runCommand(cmd, timeout=timeout)
     except Exception:
         stderr = traceback.format_exc()
         node["error"] = "connection error: "+stderr.splitlines()[-1]
@@ -104,9 +103,6 @@ def scan_script(args):
         return node
 
     node["stdout"] = str(outp)
-
-    if proc is not None:
-        node["data"] = proc(outp)
 
     return node
 
@@ -184,44 +180,62 @@ def scan_statistics(nodes, do_log=True, handle_stderr=False):
     return res
 
 
-def scan(cmd=None, proc=None):
+def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
+         timeout=10, save_erroneous=True, do_statistics=True,
+         save_stdout=True, save_stderr=True,
+         node_script=scan_script, save_result=True):
+    global node_len
     log = logging.getLogger().info
 
-    log("get planet lab ip list")
-    node_ips = lib.getBestNodes()[:5]#lib.getPlanetLabNodes(slice_name)
+    if nodes is None:
+        log("get planet lab ip list")
+        nodes = lib.getPlanetLabNodes(slice_name)#lib.getBestNodes()[:5]
+    node_len = len(nodes)
 
     log("start scanning them ")
-    node_calls = [(ip, cmd, proc) for ip in node_ips]
-    nodes = utils.thread_map(scan_script,
+    args = {"cmd": cmd,
+            "timeout": timeout}
+    node_calls = [args.update(ip=ip) for ip in nodes]
+
+    nodes = utils.thread_map(node_script,
                              node_calls, used_threads)
 
-    log("write out the results")
-    with open("results/scan.json", "w") as f:
-        f.write(json.dumps(nodes))
+    if stdout_proc is not None:
+        log("Run output processing")
+        for node in nodes:
+            node["data"] = stdout_proc(node["stdout"])
 
-    log("calculate statistics")
-    stats = scan_statistics(nodes)
-    print json.dumps(stats, indent=2)
+    if stderr_proc is not None:
+        log("Run error processing")
+        for node in nodes:
+            node["error"] = stderr_proc(node["stderr"])
 
+    log("filter not needed informations")
+    if not save_erroneous:
+        new_list = []
+        for node in nodes:
+            if "error" not in node and\
+                    node["online"] == "online":
+                new_list.append(node)
+        nodes = new_list
 
-def setup_logging():
-    global logger
+    if not save_stderr:
+        for node in nodes:
+            node.pop("stderr", None)
 
-    class MyFilter(logging.Filter):
-        def filter(self, record):
-            keywords = ["paramiko", "requests", "urllib3"]
-            return all(map(lambda x: x not in record.name, keywords))
-            # return "paramiko" not in record.name and "requests" not in record.name and "urllib3" not in record.name
+    if not save_stdout:
+        for node in nodes:
+            node.pop("stdout", None)
 
-    logger = paramiko.util.logging.getLogger()  # logging.getLogger()
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        '[%(asctime)s][%(name)s] %(message)s', datefmt='%M.%S')
-    handler.setFormatter(formatter)
-    handler.addFilter(MyFilter())
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    return logger
+    if save_result:
+        log("write out the results")
+        with open("results/scan.json", "w") as f:
+            f.write(json.dumps(nodes))
+
+    if do_statistics:
+        log("calculate statistics")
+        stats = scan_statistics(nodes)
+        print json.dumps(stats, indent=2)
 
 
 def measure_node(node, i, timeout):

@@ -266,7 +266,8 @@ def getPlanetLabNodes(slice_name):
     # the slice's node ids
     try:
         node_ids = plc_api.GetSlices(auth, slice_name, ['node_ids'])[0]['node_ids']
-        return [item["hostname"] for item in plc_api.GetNodes(auth,node_ids,['hostname'])]
+        node_hostnames = plc_api.GetNodes(auth,node_ids,['hostname'])
+        return [item["hostname"] for item in node_hostnames]
     except:
         log = logging.getLogger("RemoteScripting.NodeList").info
         log("Error donwloading PlanetLab node list from plc API: %s",

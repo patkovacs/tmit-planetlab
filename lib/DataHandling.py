@@ -13,33 +13,104 @@ import lib
 
 def main():
     pass
+    # SingleMeasure.one_measure(getBestNodes()[0])
+    # from_date = datetime.date(2015, 9, 2)
+    # until_date = datetime.date(2015, 10, 7)
+    # push_results_to_db(from_date, until_date)
 
+
+def link_from_raw_measure():
+    last_measure_time = 0
+    limit = 1000
+    try:
+        with open("state", "r") as f:
+            last_measure_time = float(f.read())
+    except Exception:
+        pass
+    print "parse from measure time: ", last_measure_time
+
+    print "load asn cache"
+    utils.load_asn_cache("asn_cache.json")
+    print "load raw measures"
     raw = get_collection("raw_measures", True)
-    measures = raw.find()
+    links = get_collection("links", True)
+    measures = raw.find({
+        "result.0.time": {
+            "$gt": last_measure_time
+        }
+    }).sort([
+        ("result.0.time", 1)
+    ]).limit(limit)
+    # db.getCollection('raw_measures').find({
+	# 	"result.0.time": {$gt: 0}
+	# }).sort({
+	# 	"result.0.time": 1
+	# }).limit(3)
+    max = measures.count()
+    if max < 1:
+        print "No more measure found to parse"
+        return
+    i = 1
+    results = []
+    print "Resolve raw measures"
     for measure in measures:
+        print "%d. from %d"%(i, max)
+        i += 1
         if "result" not in measure:
             continue
+
+        last_measure_time = float(measure["result"][0]["time"])
+
         for item in measure["result"]:
             if "name" not in item or\
                   item["name"] != "traceroute":
                 continue
-            parse = parse_traceroute2(item,
-                                      item["from"])
-            exit()
 
-    # SingleMeasure.one_measure(getBestNodes()[0])
-    #from_date = datetime.date(2015, 9, 2)
-    #until_date = datetime.date(2015, 10, 7)
-    #push_results_to_db(from_date, until_date)
+            if not lib.is_valid_ip(item["from"]):
+                tmp = lib.getIP_fromDNS(item["from"])
+                if tmp is not None:
+                    item["from"] = tmp
+            link_res = parse_traceroute2(item,
+                                      item["from"])
+
+            results.extend(link_res)
+            #print "---", json.dumps(parse, indent=2)
+            #exit()
+
+        #print "save asn cache"
+        utils.save_asn_cache("asn_cache.json")
+        #print "save results"
+        if len(results) > 0:
+            links.insert_many(results)
+            results = []
+
+        with open("state", "w") as f:
+            f.write(str(float(last_measure_time)))
 
 
 def parse_traceroute2(measure, from_ip):
     outp = measure["result"]
     time = measure["time"]#datetime.datetime.fromtimestamp(measure["time"])
 
-    parse = utils.trparse.loads(outp, from_ip)
+    print "%0.2f: link reading: "%time ,
+    if "bind: Cannot assign requested address" in outp:
+        print "!"
+        return []
+    if "/bin/" in outp:
+        print "e"
+        return []
+    if "could not open session" in outp:
+        print "f"
+        return []
+    try:
+        parse = utils.trparse.loads(outp, from_ip)
+    except Exception:
+        print "?"
+        return []
+    print "*",
 
     prev_ip = from_ip
+    prev_asn = str(utils.get_as_req(from_ip))
     end_ip = parse.dest_ip
     prev_rtt = 0
     index = 0
@@ -74,28 +145,33 @@ def parse_traceroute2(measure, from_ip):
                 mainProbe = probe
                 maxCount = count
 
-        avgRTT = probes[mainProbe]["avg"]
-        aktIP = mainProbe
-        from_asn = str(utils.get_as_req(prev_ip))
-        to_asn = str(utils.get_as_req(aktIP))
+        avg_rtt = probes[mainProbe]["avg"]
+        akt_ip = mainProbe
+        akt_asn = utils.get_as_req(akt_ip)
         links.append({
-            "from": from_asn+":"+prev_ip,
-            "to": to_asn+":"+aktIP,
-            "delay": avgRTT - prev_rtt,
-            "rtt": avgRTT,
-            "jitter": probes[mainProbe]["deviation"]
+            "from_ip": prev_ip,
+            "to_ip": akt_ip,
+            "from_asn": prev_asn,
+            "to_asn": akt_asn,
+            "delay": avg_rtt - prev_rtt,
+            "rtt": avg_rtt,
+            "jitter": probes[mainProbe]["deviation"],
+            "time": time,
+            "measurer_ip": from_ip
         })
-        prev_ip = aktIP
+        prev_ip = akt_ip
+        prev_asn = akt_asn
         index += 1
-        prev_rtt = avgRTT
+        prev_rtt = avg_rtt
 
+    print ""
     res = {
         "from": from_ip,
         "to": end_ip,
         "datetime": time,
         "links": links
     }
-    print json.dumps(res, indent=2)
+    # print json.dumps(res, indent=2)
 
     # print json.dumps(res, indent=2, default=json_util.default)
 
@@ -104,7 +180,8 @@ def parse_traceroute2(measure, from_ip):
     #     geoloc = get_geoloc(ip)
     #     asn = get_asn(ip)
 
-    return res
+    return links
+
 
 def get_collection(name, local=False):
     if local:
@@ -117,16 +194,22 @@ def get_collection(name, local=False):
         db = client[app_name]
     return db[name]
 
+
 def save_one_measure(data, db=False):
     timeStamp = lib.get_time().replace(":", ".")[0:-3]
     filename = 'results/%s/%s/rawTrace_%s_%s.json' % (lib.get_date(), timeStamp[:2], lib.get_date(), timeStamp)
 
     if db:
-        app_name = os.environ['OPENSHIFT_APP_NAME']
-        mongo_url = os.environ['OPENSHIFT_MONGODB_DB_URL']
+        if 'OPENSHIFT_APP_NAME' in os.environ:
+            app_name = os.environ['OPENSHIFT_APP_NAME']
+            mongo_url = os.environ['OPENSHIFT_MONGODB_DB_URL']
 
-        client = MongoClient(mongo_url)
-        db = client[app_name]
+            client = MongoClient(mongo_url)
+            db = client[app_name]
+        else:
+            client = MongoClient("localhost", 27017)
+            db = client["dev"]
+
         collection = db["raw_measures"]
         collection.insert_one(json.loads(json.dumps(data)))
 

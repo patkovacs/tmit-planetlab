@@ -4,6 +4,13 @@ import dns.name
 import dns.message
 import dns.query
 import dns.resolver
+import requests
+import requests.exceptions
+import simplejson as json
+import os.path
+import lib
+import socket
+#from RemoteScripting import is_valid_ip, getIP_fromDNS
 
 
 def _reverseIP(address):
@@ -11,11 +18,13 @@ def _reverseIP(address):
     convertedAddress = str(temp[3]) +'.' + str(temp[2]) + '.' + str(temp[1]) +'.' + str(temp[0])
     return convertedAddress
 
+
 def get_asn(ip):
     url = _reverseIP(ip)+".origin.asn.cymru.com"
     asn_number = dns.resolver.query(url, 'TXT')\
         [0].strings[0].split("|")[0].strip()
     return int(asn_number)
+
 
 def get_as_details(asn_number):
     url_detail = "AS"+str(asn_number)+".asn.cymru.com"
@@ -42,12 +51,62 @@ def get_as_details(asn_number):
     }
     return asn
 
+
 def get_as(ip):
     asn = get_asn(ip)
     return get_as_details(asn)
 
+
+asn_cache = dict()
+
+
+def load_asn_cache(filename):
+    global asn_cache
+
+    if not os.path.exists(filename):
+        print "does not exists!"
+        return
+
+    with open(filename, "r") as f:
+        try:
+            asn_cache.update(json.loads(f.read()))
+        except Exception:
+            print "exception"
+            return
+
+
+def save_asn_cache(filename):
+    with open(filename, "w") as f:
+        f.write(json.dumps(asn_cache, indent=2))
+
+
+def is_private_ip(ip):
+    # Class	Private Networks	Subnet Mask	Address Range
+    # A	10.0.0.0	            255.0.0.0	10.0.0.0 - 10.255.255.255
+    # B	172.16.0.0 - 172.31.0.0	255.240.0.0	172.16.0.0 - 172.31.255.255
+    # C	192.168.0.0	            255.255.0.0	192.168.0.0 - 192.168.255.255
+    parts = str(ip).split(".")
+    if parts[0] == "10":
+        return True
+    if parts[0] == "172" and int(parts[1]) >= 16 and int(parts[1]) < 32:
+        return True
+    if parts[0] == "192" and parts[1] == "168":
+        return True
+
+
 def get_as_req(ip):
-    import requests
+    if not lib.is_valid_ip(ip):
+        ip = lib.getIP_fromDNS(ip)
+        if ip is None:
+            print "1",
+            return None
+    if is_private_ip(ip):
+        print "2",
+        return 0
+    if ip in asn_cache:
+        print "o",
+        return asn_cache[ip]
+
     data = {
         "action": "do_whois",
         "addr": ip,
@@ -57,9 +116,24 @@ def get_as_req(ip):
         "bulk_paste": ip,
         "submit_paste": "Submit"
     }
-    res = requests.get("http://asn.cymru.com/cgi-bin/whois.cgi", data)
+    try:
+        res = requests.get("http://asn.cymru.com/cgi-bin/whois.cgi", data, timeout=5)
+    except requests.exceptions.ConnectionError:
+        print "3",
+        return None
+    except socket.timeout:
+        print "8",
+        return None
+    except requests.exceptions.ReadTimeout:
+        print "9",
+        return None
+
     state = 0
     info = None
+    if "Error: no ASN or IP match on line 1." in res.text:
+        print "4",
+        return None
+
     for line in res.text.splitlines():
         if "<PRE>" in line or state > 0:
             state += 1
@@ -67,16 +141,36 @@ def get_as_req(ip):
             info = line
             break
     if info is None:
+        print "5",
         return None
     info.strip()
     asn = info.split("|")[0]
     if "NA" in asn:
+        print "6",
+        asn_cache.update({ip: -1})
+        return -1
+    try:
+        asn = int(asn)
+    except ValueError:
+        print "7",
         return None
-    return int(asn)
+
+    asn_cache.update({ip: asn})
+    print ".",
+    return asn
+
 
 def main():
+    import time
+
+    begin = time.time()
+    for ip in _get_samples()[:8]:
+        print ip+" - "+str(get_as_req(ip))
+    print "First run: %.2f"%(time.time()-begin)
+    begin = time.time()
     for ip in _get_samples():
         print ip+" - "+str(get_as_req(ip))
+    print "Second run: %.2f"%(time.time()-begin)
 
 def _get_samples():
     return ["128.208.4.198",
