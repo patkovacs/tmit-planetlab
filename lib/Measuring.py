@@ -5,6 +5,8 @@ import threading
 from threading import Thread
 import traceback
 import logging
+import simplejson as json
+import re
 
 sys.path.append("utils")
 import utils
@@ -346,6 +348,234 @@ class IperfMeasure(Measure):
             res["serverEnd"] = self.server.endTime
             res["clientStart"] = self.client.startTime
         return res
+
+class ITGMeasure(Measure):
+    """Measuring with D-ITG"""
+    #ITGRecv
+    start_server_skeleton = 'ITGRecv'
+    #ITGSend -a <destination address> -T <protocol[UDP(default),TCP,ICMP,SCTP,DCCP] -c <pkt_size> -C <rate> -t <duration> -x <receiver-logfile name>
+    start_client_skeleton = "ITGSend -a %s -T %s -c %i -C %i -t %i -x %s"
+
+    #to_ip = mptcp from_ip=planetlabos client server_username=mptcp
+    def __init__(self, from_ip, to_ip, server_username, server_port=8999, duration=None):
+        Measure.__init__(self, from_ip, to_ip)
+        self.itg_installed = None
+        self.client = None
+        self.server = None
+        self.duration = duration
+        self.server_port = server_port
+        self.fromIP = from_ip
+        self.toIP = to_ip
+        self.toDNS = None
+        self.fromDNS = None
+        self.connection = None
+        self.error = None
+        self.errorTrace = None
+        self.rawResult = None
+        self.server_username = server_username
+        self.rawResults = []
+        self.online = None
+        self.date = get_date()
+        self.timeStamp = get_time()
+        self.id = str(self.fromIP).replace(".", "_")
+        self.log = logging.getLogger().getChild(self.id + ".itg")
+
+    def _check_DITG_installation(self, con):
+        cmd_test = "ITGSend -v"
+        not_installed_test = "ITGSend: command not found"
+        installed_test = "ITGSend version"
+        if self.error != None:
+            self.itg_install = "Not checking install: Error at previous state"
+            return False
+
+        try:
+            err, outp = con.runCommand(cmd_test)
+        except Exception:
+            print traceback.format_exc()
+            return False
+
+        if installed_test in outp or installed_test in err:
+            self.itg_installed = "installed"
+            return True
+        elif not_installed_test in outp:
+            self.itg_installed = "not installed"
+            self.itg_not_installed()
+            return False
+        return False
+
+    def itg_not_installed(self):
+        with open("not_installed","a") as file:
+            file.write(self.fromIP+'\n')
+
+    def _startClient(self,protocol="UDP", pkt_size=512,rate=1000,duration=10000,receive_logfile_name="receive_log_file_"):
+        log = self.log.getChild("client")
+        receive_logfile_name = receive_logfile_name + self.toIP
+        self.client = lib.Connection(self.fromIP)
+        log.info("Creating connection to remote target")
+        self.client.connect()
+        if self.client.error is not None:
+            log.info(
+                "Abort because of a previous error: " + self.client.error + " ErrorTrace: " + self.client.errorTrace)
+            return False
+
+        self._check_DITG_installation(self.client)
+
+        if "installed" != self.itg_installed:
+            log.info("Measurement aborted, D-ITG not installed")
+            self.client.error = "D-ITGNotInstalled"
+            self.client.errorTrace = self.client.error
+            return False
+
+        #ITGSend -a <destination address> -T <protocol[UDP(default),TCP,ICMP,SCTP,DCCP] -c <pkt_size> -C <rate> -t <duration> -x <receiver-logfile name>
+        cmd = self.start_client_skeleton % \
+              (self.toIP, protocol, pkt_size, rate, duration, receive_logfile_name)
+        log.info("Executing remote command: %s", cmd)
+        self.client.startTime = time.time()
+        self.client.stdout, self.client.stderr = self.client.runCommand(cmd, timeout=duration + 5)
+        log.info("Client ended")
+
+        log.info("Output: %s", self.client.stdout)
+        if len(self.client.stderr) > 0 and "WARNING:" not in self.client.stderr:
+            log.info("Error at remote execution: %s", self.client.stderr)
+            self.client.error = "RemoteRuntimeError"
+            self.client.errorTrace = self.client.stderr
+            return False
+
+        return True
+
+    def _startServer(self):
+        log = self.log.getChild("server")
+        self.server = lib.Connection(self.toIP, self.server_username)
+        log.info("Creating connection to remote target")
+        self.server.connect()
+        if self.server.error is not None:
+            log.info(
+                "Abort because of a previous error: " + self.server.error + " ErrorTrace: " + self.server.errorTrace)
+            return False
+
+        self._check_DITG_installation(self.server)
+
+        if "installed" != self.itg_installed:
+            log.info("Measurement aborted, D-ITG not installed")
+            self.server.error="ITG not installed"
+            return False
+         #ITGRecv
+        cmd = self.start_server_skeleton
+        log.info("Executing remote command: %s", cmd)
+        output = self.server.startCommand(cmd)
+        print output
+        log.info("Server started")
+        return True
+
+    def _endServer(self):
+        self.log.info("Stopping server")
+        self.server.endCommand()
+        self.log.info("Server stopped")
+        self.log.info("Server output: " + self.server.stdout)
+        self.log.info("Server error: " + self.server.stderr)
+
+    def runITG(self,receive_log_file=None,send_log_file=None,duration=None,pkt_size=None,rate=None):
+        if duration is None:
+            duration = self.duration
+        else:
+            self.duration = duration
+        self.log.info("Starting server")
+        successful = self._startServer()
+        if not successful:
+            self.log.info("Server starting failed, exiting measurement")
+            self.error = "ClientError:" + self.server.error
+            self.errorTrace = self.server.errorTrace
+            return
+
+        time.sleep(2)
+        self.log.info("Starting client")
+        successful = self._startClient()
+        if not successful:
+            self.log.info("Client starting failed, exiting measurement")
+            self.error = "ClientError:" + self.client.error
+            self.errorTrace = self.client.errorTrace
+            return
+
+        self._endServer()
+        self.log.info("Measure ended")
+        res = self.getData()
+        print res.keys()
+        print res["date"]
+
+    def run(self):
+        self.runITG()
+
+    def start(self, timeout=10):
+        #self.log.info("Starting remote execution on new thread " \
+        #             "(name: '%s', command: %s)" % (name, skeleton))
+        thread = Thread(target=self.run)
+        thread.start()
+        self.thread = thread
+        return thread
+
+    def end(self):
+        print "END Called"
+
+    def getData(self, sendError=True, sendErrorTrace=False):
+        res = Measure.getData(self, sendError, sendErrorTrace)
+        if self.client is None or self.server is None:
+            return {"error": "MeasureNotStarted"}
+
+        res["itg"] = self.client.stdout
+        res["online"] = self.server.online and self.client.online
+        if self.error is None:
+            res["serverStart"] = self.server.startTime
+            res["serverEnd"] = self.server.endTime
+            res["clientStart"] = self.client.startTime
+        self.create_json(res)
+        return res
+
+    def create_json(self,res,receive_logfile_name="receive_log_file_"):
+        log = self.log.getChild("log")
+        receive_logfile_name = receive_logfile_name + self.toIP
+        self.server = lib.Connection(self.toIP, self.server_username)
+        log.info("Creating connection to remote target")
+        self.server.connect()
+        if self.server.error is not None:
+            log.info(
+                "Abort because of a previous error: " + self.server.error + " ErrorTrace: " + self.server.errorTrace)
+            return False
+
+        self._check_DITG_installation(self.server)
+
+        if "installed" != self.itg_installed:
+            log.info("Measurement aborted, D-ITG not installed")
+            self.server.error="ITG not installed"
+            return False
+         #ITGDec
+        cmd = "ITGDec "+receive_logfile_name
+        log.info("Executing remote command: %s", cmd)
+        stdout,stderr = self.server.runCommand(cmd)
+        res["itg"]=stdout
+        print res["itg"]
+
+        result_json = {}
+        result_json["from"]=res["from"]
+        result_json["to"]=res["to"]
+        result_json["time"]=res["time"]
+        result_json["date"]=res["date"]
+
+        lists = res["itg"].split("\n")
+        splitted = []
+        for l in lists:
+            if "=" in l:
+                splitted.append(l.replace(" ",""))
+        dictin=[]
+        for s in splitted[0:11]:
+            result_json[s.split("=")[0]]=float(re.findall(r'\d+[\.]?\d*',s.split("=")[1])[0])
+        with open(result_json["date"]+".json","a") as file:
+            json.dump(result_json,file)
+            file.write("\n")
+        self.delete_log_file(receive_logfile_name)
+
+    def delete_log_file(self,receive_logfile_name):
+        cmd = "rm "+receive_logfile_name
+        self.server.runCommand(cmd)
 
 
 class ParalellMeasure:

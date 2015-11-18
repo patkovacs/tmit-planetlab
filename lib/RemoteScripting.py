@@ -252,6 +252,37 @@ def getBestNodes():
             ]
 
 
+def check_itg(node):
+    log_id = str(node).replace(".", "_") + ".checkIperf"
+    log = logging.getLogger().getChild(log_id).info
+
+    cmd_test = "ITGSend -v"
+    not_installed_test = "ITGSend: command not found"
+    installed_test = "ITGSend version"
+    try:
+        con = Connection(node)
+        con.connect()
+        if con.errorTrace is not None:
+            log("Error at connection: " + con.errorTrace)
+    except Exception:
+        #log("Error at connection: " + traceback.format_exc())
+        return False
+
+    try:
+        err, outp = con.runCommand(cmd_test)
+    except Exception:
+        print traceback.format_exc()
+        return False
+
+    if installed_test in outp or installed_test in err:
+        itg_installed = "installed"
+        return True
+    elif not_installed_test in outp:
+        itg_installed = "not installed"
+        return False
+    return False
+
+
 def getPlanetLabNodes(slice_name):
     global PLC_CREDENTIALS, API_URL
 

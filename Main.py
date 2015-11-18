@@ -267,6 +267,7 @@ def continous_measuring():
 
     while True:
         nodes = lib.getPlanetLabNodes(slice_name)
+        #nodes = lib.getBestNodes()
         i = 0
         for node in nodes:
             i = (i + 1) % 5

@@ -79,6 +79,51 @@ def one_measure(node):
         #lib.save_one_measure(data, db=True)
 
 
+
+def one_itg_measure(node):
+    itg_check = lib.check_itg(node)
+    logging.getLogger().info("D-ITG install check on node '%s': %s" % (node, itg_check))
+    print node
+    if not itg_check:
+        return
+    akt = create_paralell_itg(node, target1, target2)
+    akt.startMeasure()
+    akt.join()
+    data = akt.getData(False)
+    from DataHandling import save_one_measure
+
+    if data is not None:
+        save_one_measure(data, db=True)
+
+def create_paralell_itg(node, target1, target2):
+    trace_script = "traceroute -w 5.0 -q 10 %s"
+    server_username = "mptcp"
+    #duration  = 5
+    paralell_measure  = lib.ParalellMeasure()
+
+    # Traceroute
+    akt = lib.Measure(node, target1)
+    akt.setScript("traceroute", trace_script)
+    paralell_measure.addMeasure(akt, 0)
+
+    akt = lib.Measure(node, target2)
+    akt.setScript("traceroute", trace_script)
+    paralell_measure.addMeasure(akt, 0)
+
+    akt=lib.ITGMeasure(node,target1, server_username)
+    paralell_measure.addMeasure(akt,10)#ido soros
+
+    akt=lib.ITGMeasure(node,target2, server_username)
+    paralell_measure.addMeasure(akt,25)#ido soros
+
+    akt=lib.ITGMeasure(node,target1, server_username)
+    paralell_measure.addMeasure(akt,40)#ido parhuzamos
+
+    akt=lib.ITGMeasure(node,target2, server_username)
+    paralell_measure.addMeasure(akt,40)#ido parhuzamos
+
+    return paralell_measure
+
 def main():
     global logger, rsa_file
 
@@ -96,7 +141,9 @@ def main():
     lib.Connection.connection_builder = \
         lib.ConnectionBuilder(slice_name, rsa_file, None)
 
-    one_measure(node)
+    #one_measure(node)
+
+    one_itg_measure(node)
 
 
 if __name__ == "__main__":
