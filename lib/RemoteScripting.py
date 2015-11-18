@@ -1,22 +1,26 @@
-__author__ = 'Rudolf Horvath'
-__date__ = "2015.06.15"
-
-# Imports
-import paramiko
-import xmlrpclib
-import platform
+import os
+import sys
 import subprocess
 import traceback
 import socket
 from threading import Thread
 import time
 import logging
+import platform
 import simplejson as json
+import paramiko
+import xmlrpclib
+from collections import Counter
+
+sys.path.append("utils")
+import lib
+import utils
 
 
 # Constants
-API_URL         = 'https://www.planet-lab.eu:443/PLCAPI/'
+API_URL = 'https://www.planet-lab.eu:443/PLCAPI/'
 PLC_CREDENTIALS = 'ssh_needs/credentials.private'
+slice_name = 'budapestple_cloud'
 
 
 #=================================================
@@ -27,12 +31,12 @@ class Connection:
     """ This class represents an SSH connection to a remote server.
         It can be used to run c
     """
-    connectionbuilder = None
+    connection_builder = None
 
 
     def __init__(self, ip, username=None, conBuilder=None):
         if conBuilder is None:
-            self.conBuilder = Connection.connectionbuilder
+            self.conBuilder = Connection.connection_builder
         else:
             self.conBuilder = conBuilder
         self.ip = ip
@@ -56,6 +60,8 @@ class Connection:
         self.stderr = None
         self.stdout = None
         self.log.info("connection result: "+json.dumps(info))
+
+        return self.online and self.error is None
 
     def testOS(self):
         # TODO: Test it!
@@ -119,10 +125,13 @@ class Connection:
         self.thread.start()
 
     def runCommand(self, command, timeout=5):
-        if self.ssh == None:
+        if self.ssh is None:
             raise RuntimeWarning("Connection not alive!")
 
-        stdin, stdout, stderr = self.ssh.exec_command(command, timeout=timeout)
+        stdin, stdout, stderr = self.ssh.exec_command(command,
+                                                      timeout=timeout,
+                                                      get_pty=True)
+
         output = stdout.read()
         errors = stderr.read()
         return output, errors
@@ -170,7 +179,7 @@ class ConnectionBuilder:
         info["error"] = None
         info["errorTrace"] = None
 
-        if not validIP(target):
+        if not is_valid_ip(target):
             info["ip"] = getIP_fromDNS(target)
             if info["ip"] == None:
                 info["online"] = False
@@ -202,7 +211,76 @@ class ConnectionBuilder:
 
 
 #=================================================
-# Functions
+# Functions to help contacting the PlanetLab nodes
+
+def set_ssh_data(username, rsa_key, known_hosts):
+    Connection.connection_builder = \
+        ConnectionBuilder(slice_name, rsa_key, known_hosts)
+
+
+def getBestNodes():
+    return ["128.208.4.198",
+            "194.29.178.14",
+            "195.113.161.84",
+            "204.123.28.51",
+            "193.63.75.20",
+            "147.83.30.166",
+            "130.104.72.213",
+            "72.36.112.71",
+            "159.217.144.110",
+            "131.247.2.242",
+            "138.246.253.3",
+            "132.239.17.226",
+            "194.29.178.13",
+            "141.20.103.211",
+            "200.19.159.34",
+            "206.117.37.5",
+            "142.103.2.2",
+            "203.178.133.2",
+            "193.137.173.218",
+            "141.22.213.34",
+            "195.113.161.13",
+            "195.148.124.73",
+            "138.246.253.1",
+            "198.82.160.239",
+            "130.192.157.131",
+            "131.188.44.100",
+            "193.136.19.29",
+            "128.232.103.203",
+            "128.112.139.97",
+            "128.232.103.202",
+            ]
+
+
+def check_itg(node):
+    log_id = str(node).replace(".", "_") + ".checkIperf"
+    log = logging.getLogger().getChild(log_id).info
+
+    cmd_test = "ITGSend -v"
+    not_installed_test = "ITGSend: command not found"
+    installed_test = "ITGSend version"
+    try:
+        con = Connection(node)
+        con.connect()
+        if con.errorTrace is not None:
+            log("Error at connection: " + con.errorTrace)
+    except Exception:
+        #log("Error at connection: " + traceback.format_exc())
+        return False
+
+    try:
+        err, outp = con.runCommand(cmd_test)
+    except Exception:
+        print traceback.format_exc()
+        return False
+
+    if installed_test in outp or installed_test in err:
+        itg_installed = "installed"
+        return True
+    elif not_installed_test in outp:
+        itg_installed = "not installed"
+        return False
+    return False
 
 
 def getPlanetLabNodes(slice_name):
@@ -219,8 +297,12 @@ def getPlanetLabNodes(slice_name):
     # the slice's node ids
     try:
         node_ids = plc_api.GetSlices(auth, slice_name, ['node_ids'])[0]['node_ids']
-        return [item["hostname"] for item in plc_api.GetNodes(auth,node_ids,['hostname'])]
+        node_hostnames = plc_api.GetNodes(auth,node_ids,['hostname'])
+        return [item["hostname"] for item in node_hostnames]
     except:
+        log = logging.getLogger("RemoteScripting.NodeList").info
+        log("Error donwloading PlanetLab node list from plc API: %s",
+            traceback.format_exc().splitlines()[-1])
         return node_list.splitlines()
 
     # get hostname for these nodes
@@ -236,7 +318,7 @@ def getIP_fromDNS(hostname):
     return ret
 
 
-def validIP(ip):
+def is_valid_ip(ip):
     numOfSegments = 0
     for segment in ip.split("."):
         numOfSegments += 1
@@ -262,6 +344,208 @@ def ping(hostname, silent=True):
             return False
         else:
             raise RuntimeError
+
+
+#=================================================
+# Functions used to handle
+# all the PlanetLab nodes.
+
+
+def install_iperf(con):
+    cmd_install = "sudo yum install -y iperf"
+    con.runCommand(cmd_install, timeout=25)
+
+
+def check_iperf(node):
+    log_id = str(node).replace(".", "_") + ".checkIperf"
+    log = logging.getLogger().getChild(log_id).info
+    # cmd_install = "sudo yum install -y iperf"
+    cmd_test = "iperf -v"
+    not_installed_test = "iperf: command not found"
+    installed_test = "iperf version"
+
+    log("Check node: " + node)
+
+    if not ping(node):
+        log("offline")
+        return "offline"
+
+    try:
+        con = Connection(node)
+        con.connect()
+        if con.errorTrace is not None:
+            log("Error at connection: " + con.errorTrace)
+    except Exception:
+        log("Error at connection: " + traceback.format_exc())
+        return "connection fail"
+
+    try:
+        outp, err = con.runCommand(cmd_test)
+    except Exception:
+        log("Error at remote execution: " + traceback.format_exc())
+        return "runtime error"
+
+    if len(err) > 0:
+        log("Runtime error at remote execution: " + err)
+        return "runtime error"
+
+    if installed_test in outp:
+        version = outp.split(" ")[2]
+        log("installed version: " + version)
+        return "installed - version: %s" % version
+
+    if not_installed_test not in outp:
+        log("Installation not possible: " + outp)
+        return "installation abbandoned: " + outp
+
+    log("Installation started")
+    try:
+        install_iperf(con)
+    except Exception:
+        log("Installation failed: " + traceback.format_exc())
+        return "install failed: " + \
+               traceback.format_exc().splitlines()[-1]
+
+    try:
+        outp, err = con.runCommand(cmd_test)
+    except Exception:
+        log("Installation failed: " + traceback.format_exc())
+        return "install failed: " + \
+               traceback.format_exc().splitlines()[-1]
+
+    if len(err) > 0:
+        log("Installation failed: " + err)
+        return "install failed: " + err.splitlines()[-2:-1]
+
+    if installed_test in outp:
+        version = outp.split(" ")[2]
+        log("Installation suceed, new version: " + version)
+        return "freshly installed - version: %s" % version
+
+    log("Installation failed: " + outp)
+    return "install failed: " + outp
+
+
+def testOs(node_ip):
+    log = logging.getLogger("test_os"+node_ip.replace(".", "_")).info
+    cmd = "cat /etc/issue"
+    # uname -r --> gives some more inforamtion about kernel and architecture
+    node = {"ip": node_ip}
+
+    log("connect to: "+ node_ip)
+    con = Connection(node["ip"])
+    con.connect()
+
+    node["online"] = con.online
+
+    if con.error is not None:
+        node["error"] = con.errorTrace.splitlines()[-1]
+        log("connection error: "+ node_ip+ " --: "+ node["error"])
+        return node
+
+    log("connection succesfull: " + node_ip)
+    try:
+        outp, err = con.runCommand(cmd)
+    except Exception:
+        error_lines = traceback.format_exc().splitlines()
+        node["error"] = error_lines[-1]
+        return node
+
+    if len(err) > 0:
+        node["error"] = err
+        return node
+
+    node["outp"] = outp
+
+    if "Fedora" in outp or "CentOS" in outp:
+        node["os"] = outp.split("\n")[0]
+
+    return node
+
+
+def scan_iperf_installations(slice_name, used_threads=200):
+    print "get node list"
+    nodes = getPlanetLabNodes(slice_name)
+
+    print "start scanning on %d threads" % (used_threads)
+    results = utils.thread_map(install_iperf, nodes, used_threads)
+    # results = proc_map(install_iperf, nodes, used_threads)
+
+    print "--------------------"
+    c = Counter(results)
+    print "Results:"
+
+    stats = {"date": lib.get_date(), "time": lib.get_time()}
+    for item in c.most_common():
+        stats[item[0]] = item[1]
+
+    print json.dumps(stats, indent=2)
+
+    filename = "results/installations.json"
+    os.makedirs(os.path.dirname(filename))
+    with open(filename, "w") as f:
+        f.write(json.dumps(stats, indent=2))
+
+
+def scan_os_types(used_threads=200):
+    log = logging.getLogger("scan_os").info
+
+    log("get planet lab ip list")
+    node_ips = getPlanetLabNodes(slice_name)
+
+    log("start scanning them ")
+    nodes = utils.thread_map(testOs, node_ips, used_threads)
+
+    log("write out the results")
+    with open("results/scan.json", "w") as f:
+        f.write(json.dumps(nodes))
+
+    log("create statistics")
+    online = reduce(lambda acc, new:
+                    acc + 1 if new["online"] else acc,
+                    nodes, 0)
+    log("Online nodes: %d", online)
+
+    error = reduce(lambda acc, new:
+                   acc + 1 if new.has_key("error")
+                              and new["error"] != "offline"
+                   else acc,
+                   nodes, 0)
+    log("Occured errors: %d", error)
+
+
+def get_scan_statistic(filename="results/scan.json"):
+    with open(filename, "r") as f:
+        nodes = json.loads(f.read())
+        errors = Counter()
+        outp = Counter()
+        offline = 0
+        online = 0
+        error = 0
+        succeed = 0
+        for node in nodes:
+            if not node["online"]:
+                offline += 1
+                continue
+            online += 1
+            if node.has_key("error") and node["error"] != "offline":
+                errors[node["error"]] += 1
+                error += 1
+            else:
+                outp[node["outp"]] += 1
+                succeed += 1
+
+        print "Online count: ", online
+        print "Offline count: ", offline
+        print "Error count: ", error
+        print "Succeed count: ", succeed, "\n"
+
+        for type, count in errors.most_common(len(errors)):
+            print "Error count:%d\n\t%s" % (count, type)
+
+        for type, count in outp.most_common(len(outp)):
+            print "Output count:%d\n\t%s" % (count, type)
+
 
 node_list = """int-pl2.ise.eng.osaka-u.ac.jp
 plab2.psgtech.ac.in

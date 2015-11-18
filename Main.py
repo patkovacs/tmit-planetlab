@@ -1,328 +1,277 @@
-__author__ = 'Rudolf Horvath'
-
 import sys
-
-sys.path.append("utils")
-from RemoteScripting import *
-from Measuring import *
-from time import time, sleep
-from datetime import date, datetime
-import trparse
-from threadedMap import thread_map, proc_map
-import json
-import threading
-from multiprocessing import Pool
-import zlib
-import base64
 import paramiko
-import os
-from collections import Counter
 import subprocess
 import logging
+import traceback
+import time
+from threading import Timer
+import simplejson as json
+from collections import Counter
+
+
+sys.path.append("lib")
+sys.path.append("lib/utils")
+import lib
+import utils
+from lib import slice_name, rsa_file, known_hosts_file
 
 # Constants
-slice_name = 'budapestple_cloud'
-rsa_file = 'ssh_needs/id_rsa'
-knownHosts_file = 'ssh_needs/known_hosts'
-# target ip
-traceroute_skeleton = "traceroute -w 5.0 -q 3 %s"
-
-# ip address - time - interval - bandwidth Mbitps - port
-iperf_client_skeleton = "iperf -c %s -u -t %d -i %d -b %dm -f m -p %d"
-
-# ip(interface), port
-iperf_server_skeleton = 'iperf -s -B %s -u -p %d'
-
 used_procs = 100
-used_threads = 200
+used_threads = 50
 
-RUN_MEASURES = ["iperf"]  # , "traceroute"]
+lib.set_ssh_data(slice_name, rsa_file, known_hosts_file)
 
-target1 = "152.66.244.82"
-target2 = "152.66.127.81"
-target_names = [target1, target2]
-target_username = "mptcp"
 
-nodes = []
-measures = []
-results = []
-
-Connection.connectionbuilder = \
-    ConnectionBuilder(slice_name, rsa_file, None)
-
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+
+node_len = 0
 
 
 def main():
-    #continous_measuring()
-    scan_os_types()
-    get_scan_statistic()
+    pass
+
+    continous_measuring()
+    exit()
+
+    if len(sys.argv) == 1:
+        continous_measuring()
+        return
+    if sys.argv[1] == "scan":
+        args = {
+            "cmd": "cat /etc/issue",
+            "save_result": False,
+            "do_statistics": False
+        }
+        # nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
+        #  timeout=10, save_erroneous=True,
+        #  save_stdout=True, save_stderr=True,
+        #  node_script=scan_script, save_result=True
+
+        scan(**args)
+        return
+    if sys.argv[1] == "dev":
+
+        return
+
+    # remote.scan_os_types(used_threads)
+    # remote.get_scan_statistic()
 
 
-def setup_logging():
-    global logger
+def scan_script(args):
+    global node_len
+    node_len -= 1
 
-    class MyFilter(logging.Filter):
-        def filter(self, record):
-            keywords = ["paramiko", "requests", "urllib3"]
-            return all(map(lambda x: x not in record.name, keywords))
-            # return "paramiko" not in record.name and "requests" not in record.name and "urllib3" not in record.name
-
-    logger = paramiko.util.logging.getLogger()  # logging.getLogger()
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        '[%(asctime)s][%(name)s] %(message)s', datefmt='%M.%S')
-    handler.setFormatter(formatter)
-    handler.addFilter(MyFilter())
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
-
-def saveOneMeasure(data):
-    timeStamp = getTime().replace(":", ".")[0:-3]
-    filename = 'results/%s/%s/rawTrace_%s_%s.json' % (getDate(), timeStamp[:2], getDate(), timeStamp)
-
-    if not os.path.exists(os.path.dirname(filename)):
-        os.makedirs(os.path.dirname(filename))
-
-    with open(filename, 'w') as f:
-        f.write(json.dumps(data, indent=2))
-
-
-def continous_measuring():
-
-    def measure_node(node, i):
-        log = "empty string"
-        try:
-            log = subprocess.check_output(["python", "SingleMeasure.py", "-n", node])
-        except Exception:
-            log = "Reaching node %s failed:\n%s" % (node, traceback.format_exc())
-
-        # Save log for last measure
-        with open("Main.py.%d.log" % i, 'w') as f:
-            f.write(log)
-
-    while True:
-        nodes = getPlanetLabNodes(slice_name)
-        i = 0
-        for node in nodes:
-            i = (i+1)%5
-            measure_node(node, i)
-
-
-def bestNodes():
-    return ["128.208.4.198",
-            "194.29.178.14",
-            "195.113.161.84",
-            "204.123.28.51",
-            "193.63.75.20",
-            "147.83.30.166",
-            "130.104.72.213",
-            "72.36.112.71",
-            "159.217.144.110",
-            "131.247.2.242",
-            "138.246.253.3",
-            "132.239.17.226",
-            "194.29.178.13",
-            "141.20.103.211",
-            "200.19.159.34",
-            "206.117.37.5",
-            "142.103.2.2",
-            "203.178.133.2",
-            "193.137.173.218",
-            "141.22.213.34",
-            "195.113.161.13",
-            "195.148.124.73",
-            "138.246.253.1",
-            "198.82.160.239",
-            "130.192.157.131",
-            "131.188.44.100",
-            "193.136.19.29",
-            "128.232.103.203",
-            "128.112.139.97",
-            "128.232.103.202",
-            ]
-
-
-def install_iperf(con, ip):
-    cmd_install = "sudo yum install -y iperf"
-    con.runCommand(cmd_install, timeout=25)
-
-
-def check_iperf(node):
-    log = logger.getChild(str(node).replace(".", "_") + ".checkIperf").info
-    # cmd_install = "sudo yum install -y iperf"
-    cmd_test = "iperf -v"
-    not_installed_test = "iperf: command not found"
-    installed_test = "iperf version"
-
-    log("Check node: " + node)
-
-    if not ping(node):
-        log("offline")
-        return "offline"
-
-    try:
-        con = Connection(node)
-        con.connect()
-        if con.errorTrace is not None:
-            log("Error at connection: " + con.errorTrace)
-    except Exception:
-        log("Error at connection: " + traceback.format_exc())
-        return "connection fail"
-
-    try:
-        err, outp = con.runCommand(cmd_test)
-    except Exception:
-        log("Error at remote execution: " + traceback.format_exc())
-        return "runtime error"
-
-    if len(err) > 0:
-        log("Runtime error at remote execution: " + err)
-        return "runtime error"
-
-    if installed_test in outp:
-        version = outp.split(" ")[2]
-        log("installed version: " + version)
-        return "installed - version: %s" % version
-
-    if not_installed_test not in outp:
-        log("Installation not possible: " + outp)
-        return "installation abbandoned: " + outp
-
-    log("Installation started")
-    try:
-        install_iperf(con, node)
-    except Exception:
-        log("Installation failed: " + traceback.format_exc())
-        return "install failed: " + \
-               traceback.format_exc().splitlines()[-1]
-
-    try:
-        err, outp = con.runCommand(cmd_test)
-    except Exception:
-        log("Installation failed: " + traceback.format_exc())
-        return "install failed: " + \
-               traceback.format_exc().splitlines()[-1]
-
-    if len(err) > 0:
-        log("Installation failed: " + err)
-        return "install failed: " + err.splitlines()[-2:-1]
-
-    if installed_test in outp:
-        version = outp.split(" ")[2]
-        log("Installation suceed, new version: " + version)
-        return "freshly installed - version: %s" % version
-
-    log("Installation failed: " + outp)
-    return "install failed: " + outp
-
-
-def testOs(node_ip):
+    ip = args["ip"]
     cmd = "cat /etc/issue"
-    # uname -r --> gives some more inforamtion about kernel and architecture
-    node = {"ip": node_ip}
+    timeout = 10
 
-    con = Connection(node["ip"])
+    if "cmd" in args and args["cmd"] is not None:
+        cmd = args["cmd"]
+    if "timeout" in args and args["timeout"] is not None:
+        timeout = args["timeout"]
+
+    log = logging.getLogger("scan."+str(ip).replace(".","_")).info
+    node = {"ip": ip}
+    logging.getLogger("scan").fatal("nodes to do: %d", node_len)
+
+    log("connect to: "+ ip)
+    con = lib.Connection(node["ip"])
     con.connect()
 
     node["online"] = con.online
 
     if con.error is not None:
         node["error"] = con.errorTrace.splitlines()[-1]
+        node["stderr"] = con.errorTrace
+        log("connection error: "+ ip+ " --: "+ node["error"])
         return node
 
+    log("connection succesfull: " + ip)
     try:
-        outp, err = con.runCommand(cmd)
+        node["time"] = time.time()
+        outp, err = con.runCommand(cmd, timeout=timeout)
     except Exception:
-        error_lines = traceback.format_exc().splitlines()
-        node["error"] = error_lines[-1]
+        stderr = traceback.format_exc()
+        node["error"] = "connection error: "+stderr.splitlines()[-1]
+        node["stderr"] = stderr
         return node
 
     if len(err) > 0:
-        node["error"] = err
+        node["error"] = "runtime error: "+str(err).splitlines()[-1]
+        node["stderr"] = str(err)
         return node
 
-    node["outp"] = outp
-
-    if "Fedora" in outp or "CentOS" in outp:
-        node["os"] = outp.split("\n")[0]
+    node["stdout"] = str(outp)
 
     return node
 
 
-def scan_iperf_installations():
-    print "get node list"
-    nodes = getPlanetLabNodes(slice_name)
+def scan_statistics(nodes, do_log=True, handle_stderr=False):
+    log = logging.getLogger("statistics").info
+    if do_log:
+        log("create statistics")
+    errors = Counter()
+    outputs = Counter()
+    error_types = Counter()
+    offline = 0
+    online = 0
+    error = 0
+    succeed = 0
 
-    print "start scanning on %d threads" % (used_threads * used_procs)
-    results = thread_map(install_iperf, nodes, used_threads)
-    # results = proc_map(install_iperf, nodes, used_threads)
+    for node in nodes:
+        if not node["online"]:
+            offline += 1
+            continue
+        online += 1
+        if "error" in node and node["error"] != "offline":
+            error_types[node["error"]] += 1
+            error += 1
+            if handle_stderr and "stderr" in node:
+                errors[node["stderr"]] += 1
 
-    print "--------------------"
-    c = Counter(results)
-    print "Results:"
+        else:
+            outputs[node["stdout"]] += 1
+            succeed += 1
 
-    stats = {"date": getDate(), "time": getTime()}
-    for item in c.most_common():
-        stats[item[0]] = item[1]
+    errors = errors.most_common(len(errors))
+    outputs = outputs.most_common(len(outputs))
+    error_types = error_types.most_common(len(error_types))
 
-    print json.dumps(stats, indent=2)
+    if do_log:
+        log("Online count:  %d", online)
+        log("Offline count: %d", offline)
+        log("Erroneous count:   %d", error)
+        log("Succeed count: %d", succeed)
 
-    with open("results/installations.json", "w") as f:
-        f.write(json.dumps(stats, indent=2))
+        log("\nOutputs:")
+        for type, count in outputs:
+            log("Output count:%d\n\t%s", count, type)
+
+        log("\nError types:")
+        for type, count in error_types:
+            log("Error type count:%d\n\t%s", count, type)
+
+        log("\nError outputs:")
+        for type, count in errors:
+            log("Error output count:%d\n\t%s", count, type)
+
+    res = {
+        "online": online,
+        "offline": offline,
+        "succeed": succeed,
+        "erroneous": error,
+        "outputs": [{
+                        "count": count,
+                        "stdout": type
+                    } for type, count in outputs],
+        "error_types": [{
+                        "count": count,
+                        "error": type
+                    } for type, count in error_types]
+    }
+
+    if handle_stderr:
+        res["errors"] = [{
+                            "count": count,
+                            "stderr": type
+                        } for type, count in errors]
+
+    return res
 
 
-def scan_os_types():
-    print "get planet lab ip list"
-    node_ips = getPlanetLabNodes(slice_name)
+def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
+         timeout=10, save_erroneous=True, do_statistics=True,
+         save_stdout=True, save_stderr=True,
+         node_script=scan_script, save_result=True):
+    global node_len
+    log = logging.getLogger().info
 
-    print "start scanning them "
-    nodes = thread_map(testOs, node_ips, used_threads)
+    if nodes is None:
+        log("get planet lab ip list")
+        nodes = lib.getPlanetLabNodes(slice_name)#lib.getBestNodes()[:5]
+    node_len = len(nodes)
 
-    print "write out the results"
-    with open("results/scan.json", "w") as f:
-        f.write(json.dumps(nodes))
+    log("start scanning them ")
+    args = {"cmd": cmd,
+            "timeout": timeout}
+    node_calls = [args.update(ip=ip) for ip in nodes]
 
-    print "create statistics"
-    online = reduce(lambda acc, new:
-                    acc + 1 if new["online"] else acc,
-                    nodes, 0)
-    print "Online nodes: ", online
+    nodes = utils.thread_map(node_script,
+                             node_calls, used_threads)
 
-    error = reduce(lambda acc, new:
-                   acc + 1 if new.has_key("error") else acc,
-                   nodes, 0)
-    print "Occured errors: ", error
-
-
-def get_scan_statistic():
-    with open("results/scan.json", "r") as f:
-        nodes = json.loads(f.read())
-        errors = Counter()
-        outp = Counter()
-        offline = 0
+    if stdout_proc is not None:
+        log("Run output processing")
         for node in nodes:
-            if not node["online"]:
-                offline += 1
-                continue
-            if node.has_key("error"):
-                errors[node["error"]] += 1
-            else:
-                outp[node["outp"]] += 1
+            node["data"] = stdout_proc(node["stdout"])
 
-        print "Offline count: ", offline, "\n"
+    if stderr_proc is not None:
+        log("Run error processing")
+        for node in nodes:
+            node["error"] = stderr_proc(node["stderr"])
 
-        for type, count in errors.most_common(len(errors)):
-            print "Error count:%d\n\t%s" % (count, type)
+    log("filter not needed informations")
+    if not save_erroneous:
+        new_list = []
+        for node in nodes:
+            if "error" not in node and\
+                    node["online"] == "online":
+                new_list.append(node)
+        nodes = new_list
 
-        for type, count in outp.most_common(len(outp)):
-            print "Output count:%d\n\t%s" % (count, type)
+    if not save_stderr:
+        for node in nodes:
+            node.pop("stderr", None)
 
-            # print "==============================="
-            # print errors
-            # print "==============================="
-            # print outp
+    if not save_stdout:
+        for node in nodes:
+            node.pop("stdout", None)
+
+    if save_result:
+        log("write out the results")
+        with open("results/scan.json", "w") as f:
+            f.write(json.dumps(nodes))
+
+    if do_statistics:
+        log("calculate statistics")
+        stats = scan_statistics(nodes)
+        print json.dumps(stats, indent=2)
+
+
+def measure_node(node, i, timeout):
+    cmd = ["python", "lib/SingleMeasure.py", "-n", node]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+
+    timer = Timer(timeout, lambda p: p.kill(), [proc])
+
+    stderr = ""
+    try:
+        timer.start()
+        log, stderr = proc.communicate()
+    except Exception:
+        log = "Reaching node %s failed (error calling process):\n%s" % (node, traceback.format_exc())
+    finally:
+        timer.cancel()
+
+    if len(stderr)>0:
+        log = "Reaching node %s failed (error in called process):\n%s" % (node, stderr)
+    # Save log for last measure
+    with open("Main.py.%d.log" % i, 'w') as f:
+        f.write(log)
+
+
+def continous_measuring():
+    timeout = 30
+
+    while True:
+        nodes = lib.getPlanetLabNodes(slice_name)
+        #nodes = lib.getBestNodes()
+        i = 0
+        for node in nodes:
+            i = (i + 1) % 5
+            measure_node(node, i, timeout)
 
 
 if __name__ == "__main__":

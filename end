@@ -1,0 +1,8 @@
+#!/bin/sh
+
+echo "Ending continous measurements"
+ps aux | grep '[p]ython .*.py' > /dev/null
+if [ $? -eq 0 ]; then
+    #Process is running
+    kill $(ps aux | grep '[p]ython .*.py' | awk '{print $2}')
+fi
