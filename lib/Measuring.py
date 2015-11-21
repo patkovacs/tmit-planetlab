@@ -357,7 +357,7 @@ class ITGMeasure(Measure):
     start_client_skeleton = "ITGSend -a %s -T %s -c %i -C %i -t %i -x %s"
 
     #to_ip = mptcp from_ip=planetlabos client server_username=mptcp
-    def __init__(self, from_ip, to_ip, server_username, server_port=8999, duration=None):
+    def __init__(self, from_ip, to_ip, server_username,receive_logfile_name, server_port=8999, duration=None):
         Measure.__init__(self, from_ip, to_ip)
         self.itg_installed = None
         self.client = None
@@ -379,6 +379,7 @@ class ITGMeasure(Measure):
         self.timeStamp = get_time()
         self.id = str(self.fromIP).replace(".", "_")
         self.log = logging.getLogger().getChild(self.id + ".itg")
+        self.receive_logfile_name=receive_logfile_name+self.toIP
 
     def _check_DITG_installation(self, con):
         cmd_test = "ITGSend -v"
@@ -407,9 +408,8 @@ class ITGMeasure(Measure):
         with open("not_installed","a") as file:
             file.write(self.fromIP+'\n')
 
-    def _startClient(self,protocol="UDP", pkt_size=512,rate=1000,duration=10000,receive_logfile_name="receive_log_file_"):
+    def _startClient(self,protocol="UDP", pkt_size=512,rate=1000,duration=10000):
         log = self.log.getChild("client")
-        receive_logfile_name = receive_logfile_name + self.toIP
         self.client = lib.Connection(self.fromIP)
         log.info("Creating connection to remote target")
         self.client.connect()
@@ -428,7 +428,7 @@ class ITGMeasure(Measure):
 
         #ITGSend -a <destination address> -T <protocol[UDP(default),TCP,ICMP,SCTP,DCCP] -c <pkt_size> -C <rate> -t <duration> -x <receiver-logfile name>
         cmd = self.start_client_skeleton % \
-              (self.toIP, protocol, pkt_size, rate, duration, receive_logfile_name)
+              (self.toIP, protocol, pkt_size, rate, duration, self.receive_logfile_name)
         log.info("Executing remote command: %s", cmd)
         self.client.startTime = time.time()
         self.client.stdout, self.client.stderr = self.client.runCommand(cmd, timeout=duration + 5)
@@ -498,9 +498,9 @@ class ITGMeasure(Measure):
 
         self._endServer()
         self.log.info("Measure ended")
-        res = self.getData()
-        print res.keys()
-        print res["date"]
+        #res = self.getData()
+        #print res.keys()
+        #print res["date"]
 
     def run(self):
         self.runITG()
@@ -523,16 +523,15 @@ class ITGMeasure(Measure):
 
         res["itg"] = self.client.stdout
         res["online"] = self.server.online and self.client.online
-        if self.error is None:
-            res["serverStart"] = self.server.startTime
-            res["serverEnd"] = self.server.endTime
-            res["clientStart"] = self.client.startTime
+        #if self.error is None:
+            #res["serverStart"] = self.server.startTime
+            #res["serverEnd"] = self.server.endTime
+            #res["clientStart"] = self.client.startTime
         self.create_json(res)
         return res
 
-    def create_json(self,res,receive_logfile_name="receive_log_file_"):
+    def create_json(self,res):
         log = self.log.getChild("log")
-        receive_logfile_name = receive_logfile_name + self.toIP
         self.server = lib.Connection(self.toIP, self.server_username)
         log.info("Creating connection to remote target")
         self.server.connect()
@@ -548,7 +547,7 @@ class ITGMeasure(Measure):
             self.server.error="ITG not installed"
             return False
          #ITGDec
-        cmd = "ITGDec "+receive_logfile_name
+        cmd = "ITGDec "+self.receive_logfile_name
         log.info("Executing remote command: %s", cmd)
         stdout,stderr = self.server.runCommand(cmd)
         res["itg"]=stdout
@@ -571,7 +570,7 @@ class ITGMeasure(Measure):
         with open(result_json["date"]+".json","a") as file:
             json.dump(result_json,file)
             file.write("\n")
-        self.delete_log_file(receive_logfile_name)
+        self.delete_log_file(self.receive_logfile_name)
 
     def delete_log_file(self,receive_logfile_name):
         cmd = "rm "+receive_logfile_name
@@ -598,9 +597,13 @@ class ParalellMeasure:
 
         start = time.time()
         for item in self.measures:
-            dist = start - time.time() + item["startTime"]
+            dist = start - time.time() + item["startTime"]            
             if dist > 0:
-                time.sleep(dist)
+                #time.sleep(dist)
+                while dist>0:
+                    time.sleep(1)
+                    dist = dist-1
+                    print dist            
             if item["onThread"]:
                 thread = item["measure"].start()
                 item["thread"] = thread

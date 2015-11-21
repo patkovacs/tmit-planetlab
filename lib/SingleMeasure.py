@@ -5,7 +5,9 @@ import fnmatch
 import os
 
 sys.path.append("..")
+sys.path.insert(0,"/home/david/Desktop/BME/szakdoga/python_script/planet-lab_dev/lib")
 sys.path.append("utils")
+print sys.path
 import lib
 from utils import setup_logging
 from lib import slice_name, target1, target2, rsa_file
@@ -92,8 +94,8 @@ def one_itg_measure(node):
     data = akt.getData(False)
     from DataHandling import save_one_measure
 
-    if data is not None:
-        save_one_measure(data, db=True)
+    #if data is not None:
+        #save_one_measure(data, db=True)
 
 def create_paralell_itg(node, target1, target2):
     trace_script = "traceroute -w 5.0 -q 10 %s"
@@ -102,24 +104,24 @@ def create_paralell_itg(node, target1, target2):
     paralell_measure  = lib.ParalellMeasure()
 
     # Traceroute
-    akt = lib.Measure(node, target1)
-    akt.setScript("traceroute", trace_script)
-    paralell_measure.addMeasure(akt, 0)
+    #akt = lib.Measure(node, target1)
+    #akt.setScript("traceroute", trace_script)
+    #paralell_measure.addMeasure(akt, 0)
 
-    akt = lib.Measure(node, target2)
-    akt.setScript("traceroute", trace_script)
-    paralell_measure.addMeasure(akt, 0)
+    #akt = lib.Measure(node, target2)
+    #akt.setScript("traceroute", trace_script)
+    #paralell_measure.addMeasure(akt, 0)
 
-    akt=lib.ITGMeasure(node,target1, server_username)
+    akt=lib.ITGMeasure(node,target1, server_username,"s_receive_log_")
     paralell_measure.addMeasure(akt,10)#ido soros
 
-    akt=lib.ITGMeasure(node,target2, server_username)
+    akt=lib.ITGMeasure(node,target2, server_username,"s_receive_log_")
     paralell_measure.addMeasure(akt,25)#ido soros
 
-    akt=lib.ITGMeasure(node,target1, server_username)
+    akt=lib.ITGMeasure(node,target1, server_username,"p_receive_log")
     paralell_measure.addMeasure(akt,40)#ido parhuzamos
 
-    akt=lib.ITGMeasure(node,target2, server_username)
+    akt=lib.ITGMeasure(node,target2, server_username,"p_receive_log")
     paralell_measure.addMeasure(akt,40)#ido parhuzamos
 
     return paralell_measure

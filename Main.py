@@ -235,7 +235,7 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
     if do_statistics:
         log("calculate statistics")
         stats = scan_statistics(nodes)
-        print json.dumps(stats, indent=2)
+        #print json.dumps(stats, indent=2)
 
 
 def measure_node(node, i, timeout):
