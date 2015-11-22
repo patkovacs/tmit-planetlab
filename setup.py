@@ -8,6 +8,7 @@ setup(name='PlanetLab measurement',
         url='http://www.python.org/sigs/distutils-sig/',
         install_requires=[
             'Django>=1.3',
+            'flask>=0.10',
             'paramiko>=1.15.2',
             'simplejson>=3.8',
             'requests>=2.7',

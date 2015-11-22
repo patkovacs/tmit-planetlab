@@ -346,6 +346,19 @@ def ping(hostname, silent=True):
             raise RuntimeError
 
 
+def is_private_ip(ip):
+    # Class	Private Networks	Subnet Mask	Address Range
+    # A	10.0.0.0	            255.0.0.0	10.0.0.0 - 10.255.255.255
+    # B	172.16.0.0 - 172.31.0.0	255.240.0.0	172.16.0.0 - 172.31.255.255
+    # C	192.168.0.0	            255.255.0.0	192.168.0.0 - 192.168.255.255
+    parts = str(ip).split(".")
+    if parts[0] == "10":
+        return True
+    if parts[0] == "172" and int(parts[1]) >= 16 and int(parts[1]) < 32:
+        return True
+    if parts[0] == "192" and parts[1] == "168":
+        return True
+
 #=================================================
 # Functions used to handle
 # all the PlanetLab nodes.
