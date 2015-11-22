@@ -1,0 +1,67 @@
+
+<!doctype html>
+<html>
+<head>
+    <title>Network | Groups</title>
+
+    <style>
+        body {
+            color: #d3d3d3;
+            font: 12pt arial;
+            background-color: #222222;
+        }
+
+        #mynetwork {
+            width: 800px;
+            height: 800px;
+            border: 1px solid #444444;
+            background-color: #222222;
+        }
+    </style>
+
+    <script type="text/javascript" src="vis.js"></script>
+    <link href="vis.css" rel="stylesheet" type="text/css"/>
+
+    <script type="text/javascript" src="data.js"></script>
+
+</head>
+
+<body>
+
+<div id="mynetwork"></div>
+<script type="text/javascript">
+    var color = 'gray';
+    var len = undefined;
+    var data = getData();
+    var nodes = data.nodes;
+    var edges = data.edges;
+
+    // create a network
+    var container = document.getElementById('mynetwork');
+
+    var data = {
+        nodes: nodes,
+        edges: edges
+    };
+
+    var options = {
+        nodes: {
+            shape: 'dot',
+            size: 30,
+            font: {
+                size: 32,
+                color: '#ffffff'
+            },
+            borderWidth: 2
+        },
+        edges: {
+            arrows:{
+                to: true
+            },
+            width: 2
+        }
+    };
+    network = new vis.Network(container, data, options);
+</script>
+</body>
+</html>

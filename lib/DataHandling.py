@@ -9,6 +9,7 @@ from pymongo import MongoClient
 sys.path.append("utils")
 import utils
 import lib
+import time
 
 
 def main():
@@ -17,6 +18,180 @@ def main():
     # from_date = datetime.date(2015, 9, 2)
     # until_date = datetime.date(2015, 10, 7)
     # push_results_to_db(from_date, until_date)
+    # add_geoloc_info()
+    exact_as_graph()
+
+
+def exact_as_graph():
+    # link example = {
+    # "_id" : ObjectId("56447760d10c7f115481f784"),
+    # "delay" : 0.6903333333333421,
+    # "rtt" : 180.3866666666666600,
+    # "time" : 1445110472.9449000000000000,
+    # "jitter" : 1.1132625726016088,
+    # "measurer_ip" : "128.208.4.198",
+    # "to" : {
+    #     "city" : "",
+    #     "country" : "GB",
+    #     "longitude" : "-0.1300",
+    #     "ip" : "62.40.124.102",
+    #     "latitude" : "51.5000",
+    #     "asn" : 20965
+    # },
+    # "from" : {
+    #     "city" : "",
+    #     "country" : "GB",
+    #     "longitude" : "-0.1300",
+    #     "ip" : "62.40.98.46",
+    #     "latitude" : "51.5000",
+    #     "asn" : 20965
+    # }
+    # }
+
+    link_collection = get_collection("links", True)
+    as_collection = get_collection("as_graph", True)
+
+    asn_numbers = link_collection.distinct("from.asn")
+
+    print "AS numbers in measure: ", ", ".join([str(x) for x in asn_numbers])
+    print "Number of AS's in measure: %d\n" % (len(asn_numbers)-1)
+    # AS -1 could not identified
+    # AS -2 not valid ip or url
+    # AS  0 private ip address
+
+    for asn in asn_numbers:
+        if asn < 1:
+            continue
+        projection = {
+            "_id": 1,
+            "from.ip": 1,
+            "to.ip": 1,
+            "from.asn": 1,
+            "to.asn": 1
+        }
+
+        # ------------------------------------------
+        # Core links:
+        mongo_filter = {
+            "from.asn": asn,
+            "to.asn": asn
+        }
+        core_links = link_collection.find(mongo_filter, projection)
+        # core_links = filter(lambda link:
+        #                         link["to"]["asn"] == asn,
+        #                         links_from_as)
+        # core_ips = set()
+        # core_ips.update([x["from"]["ip"] for x in core_links])
+        core_ips = link_collection.find(mongo_filter, projection).distinct("from.ip")
+        # id_list_core = list([str(x["_id"]) for x in core_links])
+
+        # ------------------------------------------
+        # Gateway links:
+
+        mongo_filter = {
+            "from.asn": asn,
+            "to.asn": {"$ne": asn, "$gt": 0}
+        }
+        neighbour_as = link_collection.find(mongo_filter).distinct("to.asn")
+        # gw_links = filter(lambda link:
+        #                         link["to"]["asn"] != asn and
+        #                         link["to"]["asn"] > 0,
+        #                         links_from_as)
+        # neighbour_as = set()
+        # neighbour_as.update([x["to"]["asn"] for x in gw_links])
+        gateways = dict()
+        # id_dict_gateways = dict()
+        for neighbour in neighbour_as:
+            links_to_neighbour = set()
+
+            mongo_filter = {
+                "from.asn": asn,
+                "to.asn": {"$eq": neighbour}
+            }
+            links_in_question = link_collection.find(mongo_filter, projection)
+            # links_in_question = filter(lambda link:
+            #                             link["to"]["asn"] == neighbour,
+            #                             gw_links)
+            links_to_neighbour.update([(x["from"]["ip"], x["to"]["ip"])
+                                  for x in links_in_question])
+            gateways[str(neighbour)] = list(links_to_neighbour)
+            # id_dict_gateways[neighbour] = list([str(x["_id"]) for x in links_in_question])
+
+        extracted_data = {
+            "asn": asn,
+            "core_ips": list(core_ips),
+            "gateways_to_as": gateways
+        }
+        as_collection.insert_one(extracted_data)
+        # print "Data:"
+        # print json.dumps(extracted_data, indent=2)
+        print ""
+        print "AS number: ", asn
+        print "Core IP addresses(%d ip's, from %d link measures): %s" %\
+              (len(core_ips),
+               core_links.count(),
+               ", ".join(core_ips))
+        print "Neighbouring AS-es(%d): %s" %\
+              (len(gateways),
+               ", ".join([str(x) for x in gateways.iterkeys()]))
+        for asn, links in gateways.iteritems():
+            print "Links to %s:" % asn
+            print "\t", "\n\t".join([x[0]+" - "+x[1]for x in links])
+
+
+    # mongoMap("links", fix, (from_or_to, ), filter, limit=5000)
+
+
+
+def fix_asn_in_links():
+    link_collection = get_collection("links", True)
+
+    def fix_asn_mapf(from_or_to):
+        asn_numbers = link_collection.distinct(from_or_to+".asn")
+        asn_to_fix = []
+        for asn in asn_numbers:
+            if isinstance(asn, basestring):
+                asn_to_fix.append(asn)
+        print asn_to_fix
+
+        def fix(data, from_or_to):
+            # print "Before: ", data
+            data[from_or_to]["asn"] = fix_asn(data[from_or_to]["asn"])
+            # print "After: ", data
+            return data
+
+        filter = {from_or_to+".asn": {"$in": asn_to_fix}}
+        return mongoMap("links", fix, filter,
+                        limit=5000, args=(from_or_to, ))
+
+    while True:
+        nfixed_from = fix_asn_mapf("from")
+        nfixed_to = fix_asn_mapf("to")
+        print "nfixed_from: ", nfixed_from
+        print "nfixed_to: ", nfixed_to
+
+        if nfixed_from + nfixed_to== 0:
+            break
+
+def mongoMap(collection_name, function, mongo_filter=None, sort=None, limit=0, args=()):
+    if mongo_filter is None:
+        mongo_filter = {}
+
+    col = get_collection(collection_name, True)
+
+    if sort is None or len(sort) == 0:
+        items = col.find(mongo_filter).limit(limit)
+    else:
+        items = col.find(mongo_filter).sort(sort).limit(limit)
+
+    i = 0
+    for item in items:
+        i += 1
+        col.replace_one(
+            {"_id": item["_id"]},
+            function(item, *args))
+
+    return i
 
 
 def link_from_raw_measure():
@@ -86,6 +261,88 @@ def link_from_raw_measure():
 
         with open("state", "w") as f:
             f.write(str(float(last_measure_time)))
+
+
+def fix_asn(data):
+    if isinstance(data, basestring) and data.isdigit():
+        return int(data)
+    else:
+        return data
+
+def add_geoloc_info():
+    save_cache_per_times = 50
+    limit = 5000
+
+    print "load geoloc cache"
+    utils.load_geoloc_cache("geoloc_cache.json")
+
+    print "load links"
+    link_collection = get_collection("links", True)
+
+    def another_limit(limit):
+        links = link_collection.find({
+            "from": {
+                "$exists": False
+            }
+        }).sort([
+            ("time", 1)
+        ]).limit(limit)
+
+        max = links.count()
+        if max < 1:
+            print "No more measure found to parse"
+            return False
+
+        i = etap_i = 1
+        print "Resolve raw links"
+        start = etap = time.time()
+        for link in links:
+            i += 1
+
+            geoloc_from = utils.get_geoloc(link["from_ip"])
+            geoloc_to = utils.get_geoloc(link["to_ip"])
+
+            geoloc_from["asn"] = fix_asn(link["from_asn"])
+            geoloc_to["asn"] = fix_asn(link["to_asn"])
+
+            link["from"] = geoloc_from
+            link["to"] = geoloc_to
+
+            resp = link_collection.update_one(
+                {"_id": link["_id"]},
+                {"$set": {
+                    "from": geoloc_from,
+                    "to": geoloc_to
+                }, "$unset": {
+                    "from_asn": True,
+                    "to_asn": True,
+                    "from_ip": True,
+                    "to_ip": True
+                }})
+
+            if not resp.raw_result["updatedExisting"]:
+                print "Error, not updated: ", link["_id"]
+
+            if i % save_cache_per_times == 0:
+                now = time.time()
+                print "%d. from %d: " % (i, max),
+                print "Global speed: %f link/sec" %\
+                      (float(i) / (now - start)),
+                print "Last etap speed: %f link/sec" %\
+                      (float(i-etap_i) / (now - etap))
+                etap = time.time()
+                etap_i = i
+
+        print "Runtime: ", time.time() - start
+        print "Resolved links: ", i
+        print "Speed: %f link/sec" %\
+              (float(i) / (time.time() - start))
+
+        utils.save_geoloc_cache("geoloc_cache.json")
+        return True
+
+    while another_limit(limit):
+        pass
 
 
 def parse_traceroute2(measure, from_ip):
@@ -240,7 +497,6 @@ def push_results_to_db(from_date=None, until_date=None):
     if results is None:
         print "Error at result reading"
         return
-
 
     for doc in results:
         if doc is not None and "time" in doc.keys():
