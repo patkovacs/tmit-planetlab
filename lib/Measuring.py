@@ -556,7 +556,8 @@ class ITGMeasure(Measure):
         result_json = {}
         result_json["from"]=res["from"]
         result_json["to"]=res["to"]
-        result_json["time"]=res["time"]
+        #result_json["time"]=res["time"]
+        result_json["time"]=time.strftime('%H:%M:%S',time.localtime(self.client.startTime))
         result_json["date"]=res["date"]
 
         lists = res["itg"].split("\n")
