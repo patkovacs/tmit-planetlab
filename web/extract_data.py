@@ -49,6 +49,11 @@ def main():
         "nodes": nodes,
         "edges": edges
     }
+    from collections import Counter
+    link_weights = Counter()
+    for edge in edges:
+        link_weights[edge["value"]] += 1
+    print link_weights.most_common()
 
     with open("data.js", "w") as f:
         f.write("function getData(){ return " + json.dumps(data, indent=2) + ";}")

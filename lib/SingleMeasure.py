@@ -75,8 +75,8 @@ def one_measure(node):
     data = akt.getData(False)
 
     if data is not None:
-        lib.save_one_measure(data, db=False)
-        #lib.save_one_measure(data, db=True)
+        #lib.save_one_measure(data, db=False)
+        lib.save_one_measure(data, db=True)
 
 
 
@@ -141,9 +141,9 @@ def main():
     lib.Connection.connection_builder = \
         lib.ConnectionBuilder(slice_name, rsa_file, None)
 
-    #one_measure(node)
+    one_measure(node)
 
-    one_itg_measure(node)
+    #one_itg_measure(node)
 
 
 if __name__ == "__main__":
