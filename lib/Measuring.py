@@ -357,7 +357,7 @@ class ITGMeasure(Measure):
     start_client_skeleton = "ITGSend -a %s -T %s -c %i -C %i -t %i -x %s"
 
     #to_ip = mptcp from_ip=planetlabos client server_username=mptcp
-    def __init__(self, from_ip, to_ip, server_username,receive_logfile_name, server_port=8999, duration=None):
+    def __init__(self, from_ip, to_ip, server_username,receive_logfile_name, paralell, server_port=8999, duration=None):
         Measure.__init__(self, from_ip, to_ip)
         self.itg_installed = None
         self.client = None
@@ -380,6 +380,7 @@ class ITGMeasure(Measure):
         self.id = str(self.fromIP).replace(".", "_")
         self.log = logging.getLogger().getChild(self.id + ".itg")
         self.receive_logfile_name=receive_logfile_name+self.toIP
+        self.paralell=paralell
 
     def _check_DITG_installation(self, con):
         cmd_test = "ITGSend -v"
@@ -559,7 +560,8 @@ class ITGMeasure(Measure):
         #result_json["time"]=res["time"]
         result_json["time"]=time.strftime('%H:%M:%S',time.localtime(self.client.startTime))
         result_json["date"]=res["date"]
-
+        result_json["Paralell"]=self.paralell
+        
         lists = res["itg"].split("\n")
         splitted = []
         for l in lists:

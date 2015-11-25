@@ -112,16 +112,16 @@ def create_paralell_itg(node, target1, target2):
     #akt.setScript("traceroute", trace_script)
     #paralell_measure.addMeasure(akt, 0)
 
-    akt=lib.ITGMeasure(node,target1, server_username,"s_receive_log_")
+    akt=lib.ITGMeasure(node,target1, server_username,"s_receive_log_",False)
     paralell_measure.addMeasure(akt,10)#ido soros
 
-    akt=lib.ITGMeasure(node,target2, server_username,"s_receive_log_")
+    akt=lib.ITGMeasure(node,target2, server_username,"s_receive_log_",False)
     paralell_measure.addMeasure(akt,25)#ido soros
 
-    akt=lib.ITGMeasure(node,target1, server_username,"p_receive_log")
+    akt=lib.ITGMeasure(node,target1, server_username,"p_receive_log_",True)
     paralell_measure.addMeasure(akt,40)#ido parhuzamos
 
-    akt=lib.ITGMeasure(node,target2, server_username,"p_receive_log")
+    akt=lib.ITGMeasure(node,target2, server_username,"p_receive_log_",True)
     paralell_measure.addMeasure(akt,40)#ido parhuzamos
 
     return paralell_measure
