@@ -6,6 +6,7 @@ sys.path.append("../lib/utils")
 import lib
 import utils
 
+
 def main():
     # data_vis = {"nodes": [{"group": 0, "id": 0, "label": "0"}, ...],
     #         "edges": [{"from": 1, "to": 0}, ...]}
@@ -21,7 +22,7 @@ def main():
     #     }
     # }
 
-    as_collection = lib.get_collection("as_graph", True)
+    as_collection = lib.get_collection("as_graph")
 
     mongo_filter = {"asn": {"$gt": 0, "$ne": None}}
 

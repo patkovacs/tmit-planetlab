@@ -31,27 +31,56 @@ node_len = 0
 def main():
     pass
 
-    continous_measuring()
-    exit()
-
     if len(sys.argv) == 1:
         continous_measuring()
         return
-    if sys.argv[1] == "scan":
+    elif sys.argv[1] == "scan":
+
+        rsa_dir = lib.search_dir(".", "ssh_needs", 2)
+        if rsa_dir is not None:
+            rsa_file = str(rsa_dir)+"/id_rsa"
+            lib.Connection.connection_builder = \
+                lib.ConnectionBuilder(slice_name, rsa_file, None)
+        else:
+            logger.info("RSA key not found!")
+            return
+
+        node_states = lib.get_collection("node_state")
+
+        def stdout_proc(node):
+            stdout = node["stdout"]
+            if "release" in stdout:
+                os = stdout.split("\n")[0]
+                result = {
+                    "ip": node["ip"],
+                    "ts": time.time(),
+                    "os": os
+                }
+                node_states.insert_one(result)
+                print "Good node: ip=%s, os=%s" % (node["ip"], os)
+            else:
+                node["error"] = "not valid response: " + stdout
+                node["stderr"] = stdout
         args = {
             "cmd": "cat /etc/issue",
             "save_result": False,
-            "do_statistics": False
+            "do_statistics": True,
+            "stdout_proc": stdout_proc
         }
         # nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
         #  timeout=10, save_erroneous=True,
         #  save_stdout=True, save_stderr=True,
         #  node_script=scan_script, save_result=True
 
+        start = time.time()
+        print "scan started at: ", start
         scan(**args)
+        end = time.time()
+        print "scan ended at: ", end
+        print 'scan duration: %.2f seconds' % (end-start)
         return
     if sys.argv[1] == "dev":
-
+        print "\n".join(get_good_nodes())
         return
 
     # remote.scan_os_types(used_threads)
@@ -189,26 +218,31 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
 
     if nodes is None:
         log("get planet lab ip list")
-        nodes = lib.getPlanetLabNodes(slice_name)#lib.getBestNodes()[:5]
+        nodes = lib.getPlanetLabNodes(slice_name)
+        # nodes = lib.getBestNodes()[:5]
     node_len = len(nodes)
 
     log("start scanning them ")
-    args = {"cmd": cmd,
-            "timeout": timeout}
-    node_calls = [args.update(ip=ip) for ip in nodes]
+    node_calls = [{
+                    "cmd": cmd,
+                    "timeout": timeout,
+                    "ip": ip
+                  } for ip in nodes]
 
-    nodes = utils.thread_map(node_script,
+    def orchestrate(args):
+        res = node_script(args)
+        if stdout_proc is not None and "stdout" in res:
+                res["data"] = stdout_proc(res)
+
+        if stderr_proc is not None and\
+            "error" in node and\
+            res["error"] is not None:
+                    res["error"] = stderr_proc(res)
+
+        return res
+
+    nodes = utils.thread_map(orchestrate,
                              node_calls, used_threads)
-
-    if stdout_proc is not None:
-        log("Run output processing")
-        for node in nodes:
-            node["data"] = stdout_proc(node["stdout"])
-
-    if stderr_proc is not None:
-        log("Run error processing")
-        for node in nodes:
-            node["error"] = stderr_proc(node["stderr"])
 
     log("filter not needed informations")
     if not save_erroneous:
@@ -235,6 +269,11 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
     if do_statistics:
         log("calculate statistics")
         stats = scan_statistics(nodes)
+        stats["ts"] = time.time()
+
+        node_statistics = lib.get_collection("node_statistics")
+        tmp = stats.copy()
+        node_statistics.insert_one(tmp)
         print json.dumps(stats, indent=2)
 
 
@@ -251,22 +290,37 @@ def measure_node(node, i, timeout):
         timer.start()
         log, stderr = proc.communicate()
     except Exception:
-        log = "Reaching node %s failed (error calling process):\n%s" % (node, traceback.format_exc())
+        log = "Reaching node %s failed" \
+              "(error calling process):\n%s" %\
+              (node, traceback.format_exc())
     finally:
         timer.cancel()
 
-    if len(stderr)>0:
-        log = "Reaching node %s failed (error in called process):\n%s" % (node, stderr)
+    if len(stderr)>0 and "You should rebuild using libgmp >= 5" \
+       "to avoid timing attack vulnerability." in stderr and\
+       len(stderr.splitlines()) > 3:
+            log = "Reaching node %s failed (error in called process):\n%s" % (node, stderr)
+
     # Save log for last measure
     with open("Main.py.%d.log" % i, 'w') as f:
         f.write(log)
+
+
+def get_good_nodes():
+    node_states = lib.get_collection("node_state")
+    mongo_filter = {"ts": {"$gt": int(time.time()-21600)}}
+    iter_nodes = node_states.find(mongo_filter,
+                                  {"ip": True}).distinct("ip")
+    return [x for x in iter_nodes]
 
 
 def continous_measuring():
     timeout = 30
 
     while True:
-        nodes = lib.getPlanetLabNodes(slice_name)
+        # nodes = lib.getPlanetLabNodes(slice_name)
+        nodes = get_good_nodes()
+        time.sleep(1)
         #nodes = lib.getBestNodes()
         i = 0
         for node in nodes:

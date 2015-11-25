@@ -9,7 +9,7 @@ sys.path.append("utils")
 import lib
 from utils import setup_logging
 from lib import slice_name, target1, target2, rsa_file
-#from Main import target1, target2, setup_logging, slice_name
+# from Main import target1, target2, setup_logging, slice_name
 
 # Constants
 # rsa_file = '../ssh_needs/id_rsa'
@@ -35,6 +35,7 @@ def search_dir(root, name, levels=0):
         return search_dir(str(os.path.join("..", root)), name, levels-1)
     return None
 
+
 def arg_parse():
     args = []
     sys.argvargs = []
@@ -52,7 +53,7 @@ def arg_parse():
 
 def create_paralell_iperf(node, target1, target2):
     # target ip address
-    trace_script = "traceroute -w 5.0 -q 10 %s"
+    trace_script = "traceroute -A -w 5.0 -q 10 %s"
 
     paralell_measure  = lib.ParalellMeasure()
 
@@ -79,7 +80,6 @@ def one_measure(node):
         lib.save_one_measure(data, db=True)
 
 
-
 def one_itg_measure(node):
     itg_check = lib.check_itg(node)
     logging.getLogger().info("D-ITG install check on node '%s': %s" % (node, itg_check))
@@ -94,6 +94,7 @@ def one_itg_measure(node):
 
     if data is not None:
         save_one_measure(data, db=True)
+
 
 def create_paralell_itg(node, target1, target2):
     trace_script = "traceroute -w 5.0 -q 10 %s"
@@ -123,6 +124,7 @@ def create_paralell_itg(node, target1, target2):
     paralell_measure.addMeasure(akt,40)#ido parhuzamos
 
     return paralell_measure
+
 
 def main():
     global logger, rsa_file

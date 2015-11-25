@@ -48,8 +48,8 @@ def exact_as_graph():
     # }
     # }
 
-    link_collection = get_collection("links", True)
-    as_collection = get_collection("as_graph", True)
+    link_collection = get_collection("links")
+    as_collection = get_collection("as_graph")
 
     asn_numbers = link_collection.distinct("from.asn")
 
@@ -144,7 +144,7 @@ def exact_as_graph():
 
 
 def fix_asn_in_links():
-    link_collection = get_collection("links", True)
+    link_collection = get_collection("links")
 
     def fix_asn_mapf(from_or_to):
         asn_numbers = link_collection.distinct(from_or_to+".asn")
@@ -177,7 +177,7 @@ def mongoMap(collection_name, function, mongo_filter=None, sort=None, limit=0, a
     if mongo_filter is None:
         mongo_filter = {}
 
-    col = get_collection(collection_name, True)
+    col = get_collection(collection_name)
 
     if sort is None or len(sort) == 0:
         items = col.find(mongo_filter).limit(limit)
@@ -207,8 +207,8 @@ def link_from_raw_measure():
     print "load asn cache"
     utils.load_asn_cache("asn_cache.json")
     print "load raw measures"
-    raw = get_collection("raw_measures", True)
-    links = get_collection("links", True)
+    raw = get_collection("raw_measures")
+    links = get_collection("links")
     measures = raw.find({
         "result.0.time": {
             "$gt": last_measure_time
@@ -277,7 +277,7 @@ def add_geoloc_info():
     utils.load_geoloc_cache("geoloc_cache.json")
 
     print "load links"
-    link_collection = get_collection("links", True)
+    link_collection = get_collection("links")
 
     def another_limit(limit):
         links = link_collection.find({
@@ -440,8 +440,8 @@ def parse_traceroute2(measure, from_ip):
     return links
 
 
-def get_collection(name, local=False):
-    if local:
+def get_collection(name):
+    if 'OPENSHIFT_APP_NAME' not in os.environ:
         client = MongoClient("localhost", 27017)
         db = client["dev"]
     else:
