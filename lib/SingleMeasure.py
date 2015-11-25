@@ -9,7 +9,6 @@ sys.path.append("utils")
 import lib
 from utils import setup_logging
 from lib import slice_name, target1, target2, rsa_file
-# from Main import target1, target2, setup_logging, slice_name
 
 # Constants
 # rsa_file = '../ssh_needs/id_rsa'
@@ -24,10 +23,8 @@ lib.Connection.connection_builder = \
 def search_dir(root, name, levels=0):
     matches = []
     for local_root, dirnames, filenames in os.walk(root):
-        #print local_root+": "+str(dirnames)
         for filename in fnmatch.filter(dirnames, name):
             matches.append(os.path.join(local_root, filename))
-    #print "matches: "+str(matches)
 
     if len(matches) > 0:
         return matches[0]
@@ -51,7 +48,7 @@ def arg_parse():
     return parser.parse_args()
 
 
-def create_paralell_iperf(node, target1, target2):
+def create_measure(node, target1, target2):
     # target ip address
     trace_script = "traceroute -A -w 5.0 -q 10 %s"
 
@@ -66,11 +63,29 @@ def create_paralell_iperf(node, target1, target2):
     akt.setScript("traceroute", trace_script)
     paralell_measure.addMeasure(akt, 0)
 
+
     return paralell_measure
 
 
+def full_mesh_measure(node):
+    others = lib.get_good_nodes()
+    if node in others:
+        others.remove(node)
+
+    for target in others:
+        trace_script = "traceroute -A -w 5.0 -q 10 %s"
+
+        # Traceroute
+        akt = lib.Measure(node, target)
+        akt.setScript("traceroute", trace_script)
+        akt.run()
+        data = akt.getData(False)
+
+        if data is not None:
+            lib.save_one_measure(data, db=True)
+
 def one_measure(node):
-    akt = create_paralell_iperf(node, target1, target2)
+    akt = create_measure(node, target1, target2)
     akt.startMeasure()
     akt.join()
     data = akt.getData(False)
@@ -78,6 +93,8 @@ def one_measure(node):
     if data is not None:
         #lib.save_one_measure(data, db=False)
         lib.save_one_measure(data, db=True)
+
+    full_mesh_measure(node)
 
 
 def one_itg_measure(node):

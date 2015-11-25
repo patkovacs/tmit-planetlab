@@ -370,6 +370,14 @@ def get_collection(name):
     return db[name]
 
 
+def get_good_nodes():
+    node_states = lib.get_collection("node_state")
+    mongo_filter = {"ts": {"$gt": int(time.time()-21600)}}
+    iter_nodes = node_states.find(mongo_filter,
+                                  {"ip": True}).distinct("ip")
+    return [x for x in iter_nodes]
+
+
 def save_one_measure(data, db=False):
     timeStamp = lib.get_time().replace(":", ".")[0:-3]
     filename = 'results/%s/%s/rawTrace_%s_%s.json' % (lib.get_date(), timeStamp[:2], lib.get_date(), timeStamp)
