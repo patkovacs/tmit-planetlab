@@ -22,7 +22,7 @@ def main():
     #     }
     # }
 
-    as_collection = lib.get_collection("as_graph")
+    as_collection = lib.get_collection("as_graph", True)
 
     mongo_filter = {"asn": {"$gt": 0, "$ne": None}}
 

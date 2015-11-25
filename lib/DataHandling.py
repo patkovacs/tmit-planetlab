@@ -48,8 +48,8 @@ def exact_as_graph():
     # }
     # }
 
-    link_collection = get_collection("links")
-    as_collection = get_collection("as_graph")
+    link_collection = get_collection("links", True)
+    as_collection = get_collection("as_graph", True)
 
     asn_numbers = link_collection.distinct("from.asn")
 
@@ -144,7 +144,7 @@ def exact_as_graph():
 
 
 def fix_asn_in_links():
-    link_collection = get_collection("links")
+    link_collection = get_collection("links", True)
 
     def fix_asn_mapf(from_or_to):
         asn_numbers = link_collection.distinct(from_or_to+".asn")
@@ -177,7 +177,7 @@ def mongoMap(collection_name, function, mongo_filter=None, sort=None, limit=0, a
     if mongo_filter is None:
         mongo_filter = {}
 
-    col = get_collection(collection_name)
+    col = get_collection(collection_name, True)
 
     if sort is None or len(sort) == 0:
         items = col.find(mongo_filter).limit(limit)
@@ -261,88 +261,6 @@ def link_from_raw_measure():
 
         with open("state", "w") as f:
             f.write(str(float(last_measure_time)))
-
-
-def fix_asn(data):
-    if isinstance(data, basestring) and data.isdigit():
-        return int(data)
-    else:
-        return data
-
-def add_geoloc_info():
-    save_cache_per_times = 50
-    limit = 5000
-
-    print "load geoloc cache"
-    utils.load_geoloc_cache("geoloc_cache.json")
-
-    print "load links"
-    link_collection = get_collection("links")
-
-    def another_limit(limit):
-        links = link_collection.find({
-            "from": {
-                "$exists": False
-            }
-        }).sort([
-            ("time", 1)
-        ]).limit(limit)
-
-        max = links.count()
-        if max < 1:
-            print "No more measure found to parse"
-            return False
-
-        i = etap_i = 1
-        print "Resolve raw links"
-        start = etap = time.time()
-        for link in links:
-            i += 1
-
-            geoloc_from = utils.get_geoloc(link["from_ip"])
-            geoloc_to = utils.get_geoloc(link["to_ip"])
-
-            geoloc_from["asn"] = fix_asn(link["from_asn"])
-            geoloc_to["asn"] = fix_asn(link["to_asn"])
-
-            link["from"] = geoloc_from
-            link["to"] = geoloc_to
-
-            resp = link_collection.update_one(
-                {"_id": link["_id"]},
-                {"$set": {
-                    "from": geoloc_from,
-                    "to": geoloc_to
-                }, "$unset": {
-                    "from_asn": True,
-                    "to_asn": True,
-                    "from_ip": True,
-                    "to_ip": True
-                }})
-
-            if not resp.raw_result["updatedExisting"]:
-                print "Error, not updated: ", link["_id"]
-
-            if i % save_cache_per_times == 0:
-                now = time.time()
-                print "%d. from %d: " % (i, max),
-                print "Global speed: %f link/sec" %\
-                      (float(i) / (now - start)),
-                print "Last etap speed: %f link/sec" %\
-                      (float(i-etap_i) / (now - etap))
-                etap = time.time()
-                etap_i = i
-
-        print "Runtime: ", time.time() - start
-        print "Resolved links: ", i
-        print "Speed: %f link/sec" %\
-              (float(i) / (time.time() - start))
-
-        utils.save_geoloc_cache("geoloc_cache.json")
-        return True
-
-    while another_limit(limit):
-        pass
 
 
 def parse_traceroute2(measure, from_ip):
