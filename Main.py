@@ -61,11 +61,16 @@ def main():
             else:
                 node["error"] = "not valid response: " + stdout
                 node["stderr"] = stdout
+
+        def stderr_proc(node):
+            node["stderr"] = str(node["stderr"]).replace(node["ip"], "*ip*")
+
         args = {
             "cmd": "cat /etc/issue",
             "save_result": False,
             "do_statistics": True,
-            "stdout_proc": stdout_proc
+            "stdout_proc": stdout_proc,
+            "stderr_proc": stderr_proc
         }
         # nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
         #  timeout=10, save_erroneous=True,
@@ -157,6 +162,7 @@ def scan_statistics(nodes, do_log=True, handle_stderr=False):
             error_types[node["error"]] += 1
             error += 1
             if handle_stderr and "stderr" in node:
+
                 errors[node["stderr"]] += 1
 
         else:
