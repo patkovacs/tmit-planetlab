@@ -4,6 +4,7 @@
  - Username: 561a4ac60c1e6686a50001d3
  - RSA key: C:\Users\Rudolf\.ssh\id_rsa
 
+ssh 561a4ac60c1e6686a50001d3@python-limiere.rhcloud.com -L 27018:127.12.201.130:27017
 
 ----------------------------------
 # Remote MongoDB information:

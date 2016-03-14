@@ -63,7 +63,7 @@ def main():
                 node["stderr"] = stdout
 
         def stderr_proc(node):
-            node["stderr"] = str(node["stderr"]).replace(node["ip"], "*ip*")
+            return str(node["stderr"].split("\n")[-1]).replace(node["ip"], "*ip*")
 
         args = {
             "cmd": "cat /etc/issue",
@@ -109,7 +109,7 @@ def scan_script(args):
     node = {"ip": ip}
     logging.getLogger("scan").fatal("nodes to do: %d", node_len)
 
-    log("connect to: "+ ip)
+    log("connect to: " + ip)
     con = lib.Connection(node["ip"])
     con.connect()
 
@@ -233,7 +233,7 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
                     "cmd": cmd,
                     "timeout": timeout,
                     "ip": ip
-                  } for ip in nodes]
+                   } for ip in nodes]
 
     def orchestrate(args):
         res = node_script(args)
@@ -241,7 +241,7 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
                 res["data"] = stdout_proc(res)
 
         if stderr_proc is not None and\
-            "error" in node and\
+            "error" in res and\
             res["error"] is not None:
                     res["error"] = stderr_proc(res)
 

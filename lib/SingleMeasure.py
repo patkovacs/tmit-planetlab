@@ -84,6 +84,7 @@ def full_mesh_measure(node):
         if data is not None:
             lib.save_one_measure(data, db=True)
 
+
 def one_measure(node):
     akt = create_measure(node, target1, target2)
     akt.startMeasure()
