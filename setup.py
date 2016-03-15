@@ -6,6 +6,7 @@ setup(name='PlanetLab measurement',
       author='Rudolf Horvath',
       author_email='rudolf.official@gmail.com',
       url='http://www.python.org/sigs/distutils-sig/',
+      scripts = ['Main.py'],
       install_requires=[
         # 'Django>=1.3',
         'flask>=0.10',
@@ -18,5 +19,5 @@ setup(name='PlanetLab measurement',
         'pycrypto>=2.6.1',
         'ecdsa>=0.13'
       ],
-      )
+)
 
