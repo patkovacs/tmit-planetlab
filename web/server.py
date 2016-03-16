@@ -174,9 +174,17 @@ def measure_outputs():
         for log_file in logs:
             with open(os.path.join(repo_dir, log_file), "r") as f:
                 log = f.read().replace("\n", "\n\t")
-                res.append("\n\n%s:\n%s"%(log_file, log))
+                res.append("\n\n%s:\n%s" % (log_file, log))
 
     return "".join(res)
+
+
+def scan_output():
+    repo_dir = os.environ['OPENSHIFT_REPO_DIR']
+    with open(os.path.join(repo_dir, "scan.out"), "r") as f:
+        scan_log = f.read()
+
+    return scan_log
 
 
 @app.route('/')
@@ -217,6 +225,10 @@ Measurement times:
 
 Output log of last 5 measurements:
 
+%s
+
+Output of last scan:
+
 %s""" % \
         (server_time,
          proc_list,
@@ -229,7 +241,8 @@ Output log of last 5 measurements:
          now.isoformat("\t"),
          str(measurement_info["min"]),
          str(measurement_info["max"]),
-         measure_outputs()
+         measure_outputs(),
+         scan_output()
          )
 
     msg = msg.replace("\n", "<br>")

@@ -398,13 +398,12 @@ def save_one_measure(data, db=False):
 
         #collection2 = db["processed_measures"]
         #collection2.insert_one(json.loads(json.dumps(read_measure(data))))
+    else:
+        if not os.path.exists(os.path.dirname(filename)):
+            os.makedirs(os.path.dirname(filename))
 
-
-    if not os.path.exists(os.path.dirname(filename)):
-        os.makedirs(os.path.dirname(filename))
-
-    with open(filename, 'w') as f:
-        f.write(json.dumps(data, indent=2))
+        with open(filename, 'w') as f:
+            f.write(json.dumps(data, indent=2))
 
 
 def push_results_to_db(from_date=None, until_date=None):

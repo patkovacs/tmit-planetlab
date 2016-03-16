@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import sys
 import paramiko
 import subprocess
@@ -7,7 +8,7 @@ import time
 from threading import Timer
 import simplejson as json
 from collections import Counter
-
+import os
 
 sys.path.append("lib")
 sys.path.append("lib/utils")
@@ -20,7 +21,6 @@ used_procs = 100
 used_threads = 50
 
 lib.set_ssh_data(slice_name, rsa_file, known_hosts_file)
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -38,7 +38,7 @@ def main():
 
         rsa_dir = lib.search_dir(".", "ssh_needs", 2)
         if rsa_dir is not None:
-            rsa_file = str(rsa_dir)+"/id_rsa"
+            rsa_file = str(rsa_dir) + "/id_rsa"
             lib.Connection.connection_builder = \
                 lib.ConnectionBuilder(slice_name, rsa_file, None)
         else:
@@ -50,6 +50,7 @@ def main():
         def stdout_proc(node):
             stdout = node["stdout"]
             if "release" in stdout:
+                stdout = stdout.replace("\r", "")
                 os = stdout.split("\n")[0]
                 result = {
                     "ip": node["ip"],
@@ -57,13 +58,17 @@ def main():
                     "os": os
                 }
                 node_states.insert_one(result)
+                node["stdout"] = os
                 print "Good node: ip=%s, os=%s" % (node["ip"], os)
             else:
                 node["error"] = "not valid response: " + stdout
                 node["stderr"] = stdout
 
         def stderr_proc(node):
-            return str(node["stderr"].split("\n")[-1]).replace(node["ip"], "*ip*")
+            node["error"] = node["error"].replace(node["ip"], "*ip*")
+            node["error"] = node["error"].replace(node["dns"], "*dns*")
+
+            return node["error"]
 
         args = {
             "cmd": "cat /etc/issue",
@@ -82,14 +87,14 @@ def main():
         scan(**args)
         end = time.time()
         print "scan ended at: ", end
-        print 'scan duration: %.2f seconds' % (end-start)
+        print 'scan duration: %.2f seconds' % (end - start)
         return
     if sys.argv[1] == "dev":
         print "\n".join(get_good_nodes())
         return
 
-    # remote.scan_os_types(used_threads)
-    # remote.get_scan_statistic()
+        # remote.scan_os_types(used_threads)
+        # remote.get_scan_statistic()
 
 
 def scan_script(args):
@@ -105,7 +110,7 @@ def scan_script(args):
     if "timeout" in args and args["timeout"] is not None:
         timeout = args["timeout"]
 
-    log = logging.getLogger("scan."+str(ip).replace(".","_")).info
+    log = logging.getLogger("scan." + str(ip).replace(".", "_")).info
     node = {"ip": ip}
     logging.getLogger("scan").fatal("nodes to do: %d", node_len)
 
@@ -114,11 +119,12 @@ def scan_script(args):
     con.connect()
 
     node["online"] = con.online
+    node["dns"] = con.dns
 
     if con.error is not None:
         node["error"] = con.errorTrace.splitlines()[-1]
         node["stderr"] = con.errorTrace
-        log("connection error: "+ ip+ " --: "+ node["error"])
+        log("connection error: " + ip + " --: " + node["error"])
         return node
 
     log("connection succesfull: " + ip)
@@ -127,12 +133,12 @@ def scan_script(args):
         outp, err = con.runCommand(cmd, timeout=timeout)
     except Exception:
         stderr = traceback.format_exc()
-        node["error"] = "connection error: "+stderr.splitlines()[-1]
+        node["error"] = "connection error: " + stderr.splitlines()[-1]
         node["stderr"] = stderr
         return node
 
     if len(err) > 0:
-        node["error"] = "runtime error: "+str(err).splitlines()[-1]
+        node["error"] = "runtime error: " + str(err).splitlines()[-1]
         node["stderr"] = str(err)
         return node
 
@@ -162,7 +168,6 @@ def scan_statistics(nodes, do_log=True, handle_stderr=False):
             error_types[node["error"]] += 1
             error += 1
             if handle_stderr and "stderr" in node:
-
                 errors[node["stderr"]] += 1
 
         else:
@@ -201,16 +206,16 @@ def scan_statistics(nodes, do_log=True, handle_stderr=False):
                         "stdout": type
                     } for type, count in outputs],
         "error_types": [{
-                        "count": count,
-                        "error": type
-                    } for type, count in error_types]
+                            "count": count,
+                            "error": type
+                        } for type, count in error_types]
     }
 
     if handle_stderr:
         res["errors"] = [{
-                            "count": count,
-                            "stderr": type
-                        } for type, count in errors]
+                             "count": count,
+                             "stderr": type
+                         } for type, count in errors]
 
     return res
 
@@ -224,26 +229,26 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
 
     if nodes is None:
         log("get planet lab ip list")
-        nodes = lib.getPlanetLabNodes(slice_name)
-        # nodes = lib.getBestNodes()[:5]
+        # nodes = lib.getPlanetLabNodes(slice_name)
+        nodes = lib.getBestNodes()[:5]
     node_len = len(nodes)
 
     log("start scanning them ")
     node_calls = [{
-                    "cmd": cmd,
-                    "timeout": timeout,
-                    "ip": ip
-                   } for ip in nodes]
+                      "cmd": cmd,
+                      "timeout": timeout,
+                      "ip": ip
+                  } for ip in nodes]
 
     def orchestrate(args):
         res = node_script(args)
         if stdout_proc is not None and "stdout" in res:
-                res["data"] = stdout_proc(res)
+            res["data"] = stdout_proc(res)
 
-        if stderr_proc is not None and\
-            "error" in res and\
-            res["error"] is not None:
-                    res["error"] = stderr_proc(res)
+        if stderr_proc is not None and \
+                        "error" in res and \
+                        res["error"] is not None:
+            res["error"] = stderr_proc(res)
 
         return res
 
@@ -254,8 +259,8 @@ def scan(nodes=None, cmd=None, stdout_proc=None, stderr_proc=None,
     if not save_erroneous:
         new_list = []
         for node in nodes:
-            if "error" not in node and\
-                    node["online"] == "online":
+            if "error" not in node and \
+                            node["online"] == "online":
                 new_list.append(node)
         nodes = new_list
 
@@ -297,15 +302,15 @@ def measure_node(node, i, timeout):
         log, stderr = proc.communicate()
     except Exception:
         log = "Reaching node %s failed" \
-              "(error calling process):\n%s" %\
+              "(error calling process):\n%s" % \
               (node, traceback.format_exc())
     finally:
         timer.cancel()
 
-    if len(stderr)>0 and "You should rebuild using libgmp >= 5" \
-       "to avoid timing attack vulnerability." in stderr and\
-       len(stderr.splitlines()) > 3:
-            log = "Reaching node %s failed (error in called process):\n%s" % (node, stderr)
+    if len(stderr) > 0 and "You should rebuild using libgmp >= 5" \
+                           "to avoid timing attack vulnerability." in stderr and \
+                    len(stderr.splitlines()) > 3:
+        log = "Reaching node %s failed (error in called process):\n%s" % (node, stderr)
 
     # Save log for last measure
     with open("Main.py.%d.log" % i, 'w') as f:
@@ -314,7 +319,7 @@ def measure_node(node, i, timeout):
 
 def get_good_nodes():
     node_states = lib.get_collection("node_state")
-    mongo_filter = {"ts": {"$gt": int(time.time()-21600)}}
+    mongo_filter = {"ts": {"$gt": int(time.time() - 21600)}}
     iter_nodes = node_states.find(mongo_filter,
                                   {"ip": True}).distinct("ip")
     return [x for x in iter_nodes]
@@ -327,7 +332,7 @@ def continous_measuring():
         # nodes = lib.getPlanetLabNodes(slice_name)
         nodes = get_good_nodes()
         time.sleep(1)
-        #nodes = lib.getBestNodes()
+        # nodes = lib.getBestNodes()
         i = 0
         for node in nodes:
             i = (i + 1) % 5
