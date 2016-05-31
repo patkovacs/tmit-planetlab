@@ -12,11 +12,12 @@ setup(name='PlanetLab measurement',
         'paramiko>=1.15.2',
         'simplejson>=3.8',
         'requests>=2.7',
-        'requests[security]',
+        # 'requests[security]',
         'dnspython>=1.12',
         'pymongo>=3.0.3',
         'pycrypto>=2.6.1',
         'ecdsa>=0.13'
       ],
       )
+
 
